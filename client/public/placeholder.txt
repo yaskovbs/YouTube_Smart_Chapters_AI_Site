@@ -1,0 +1,17 @@
+To get your extension working, you need to create an icon file at:
+
+client/public/icons/icon48.png
+
+Follow these steps:
+1. Open the icon48_instructions.html file in your browser
+2. Right-click on the image and select "Save image as..."
+3. Navigate to the client/public/icons folder
+4. Save it as icon48.png
+
+This will provide the required icon file referenced in the manifest.json.
+
+The issue you're experiencing ("טעינת התוסף נכשלה") is due to:
+1. Missing index.html file (which I've now created)
+2. Missing or empty icon files (we need to save it from the instruction HTML files)
+
+Once you save the icon, the extension should load properly in Chrome.

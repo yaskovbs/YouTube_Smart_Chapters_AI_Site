@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Smart Chapters AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 16px;
+            width: 320px;
+            min-height: 200px;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        h1 {
+            font-size: 18px;
+            margin: 0;
+            color: #E91E63;
+        }
+        .logo {
+            width: 24px;
+            height: 24px;
+        }
+        button {
+            background-color: #E91E63;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #D81B60;
+        }
+        .description {
+            color: #666;
+            font-size: 14px;
+        }
+        .instructions {
+            font-size: 13px;
+            background-color: #f5f5f5;
+            padding: 12px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <h1>YouTube Smart Chapters AI</h1>
+        </header>
+        
+        <div class="description">
+            Generate AI-powered chapters, titles, descriptions, and tags for YouTube videos.
+        </div>
+        
+        <button id="analyzeCurrentVideo">Analyze Current Video</button>
+        
+        <div class="instructions">
+            To use:
+            <ol>
+                <li>Go to a YouTube video</li>
+                <li>Click "Analyze Current Video"</li>
+                <li>Wait for AI generation to complete</li>
+                <li>Copy and use the generated content</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+</html>

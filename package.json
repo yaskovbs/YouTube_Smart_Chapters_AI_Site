@@ -1,0 +1,33 @@
+{
+  "name": "youtube-smart-chapters-ai",
+  "version": "1.0.0",
+  "description": "Chrome extension to automatically generate YouTube chapters, titles, descriptions, and tags using AI",
+  "main": "index.js",
+  "scripts": {
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install",
+    "client": "cd client && npm start",
+    "server": "cd server && npm run dev",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "cd client && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yaskovbs/YouTube_Smart_Chapters_AI.git"
+  },
+  "keywords": [
+    "youtube",
+    "chapters",
+    "ai",
+    "chrome-extension",
+    "content-creation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yaskovbs/YouTube_Smart_Chapters_AI/issues"
+  },
+  "homepage": "https://github.com/yaskovbs/YouTube_Smart_Chapters_AI#readme",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

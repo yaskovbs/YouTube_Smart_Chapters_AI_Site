@@ -7,7 +7,7 @@ import {
   Tab,
   List,
   ListItem,
-  ListItemText,
+  // ListItemText not used
   Divider,
   Button,
   Chip,
@@ -349,7 +349,7 @@ const ResultsView = ({
     if (analysisData && !metadata && !loadingMetadata) {
       handleGenerateMetadata();
     }
-  }, [analysisData]);
+  }, [analysisData, chapters, metadata, loadingChapters, loadingMetadata, handleGenerateChapters, handleGenerateMetadata]);
 
   // Copy text to clipboard
   const copyToClipboard = (text, label) => {
@@ -450,7 +450,6 @@ const ResultsView = ({
                         <ListItem>
                           <Box sx={{ 
                             display: 'flex', 
-                            alignItems: 'center', 
                             width: '100%',
                             flexDirection: { xs: 'column', sm: 'row' },
                             alignItems: { xs: 'flex-start', sm: 'center' }

@@ -18,6 +18,15 @@ app.use(express.urlencoded({ extended: true }));
 const apiRoutes = require('./routes');
 app.use('/api', apiRoutes);
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -29,7 +38,7 @@ app.use((err, req, res, next) => {
 });
 
 // Set port
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 
 // Start server
 app.listen(PORT, () => {

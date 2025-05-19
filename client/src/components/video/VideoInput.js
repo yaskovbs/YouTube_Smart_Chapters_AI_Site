@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+/* global chrome */
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   TextField,
@@ -21,12 +22,27 @@ import { videoService } from '../../services/apiService';
  * @param {String} props.language - Current language code
  * @param {Function} props.setLoading - Function to set loading state
  * @param {Function} props.setError - Function to set error state
+ * @param {Object} props.error - Current error object
+ * @param {Object} props.processingStatus - Processing status information
+ * @param {Function} props.onResetProcessing - Function to reset processing state
+ * @param {Function} props.onCheckStatus - Function to check processing status
  */
-const VideoInput = ({ onSubmit, language, setLoading, setError }) => {
+const VideoInput = ({ 
+  onSubmit, 
+  language, 
+  setLoading, 
+  setError, 
+  error,
+  processingStatus,
+  onResetProcessing,
+  onCheckStatus
+}) => {
   const [url, setUrl] = useState('');
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [inputMethod, setInputMethod] = useState('url'); // 'url' or 'file'
+  const [currentVideoId, setCurrentVideoId] = useState(null);
+  // Using processingStatus from props instead of local state
 
   // Get texts based on current language
   const getText = () => {
@@ -160,6 +176,23 @@ const VideoInput = ({ onSubmit, language, setLoading, setError }) => {
 
   const texts = getText();
 
+  // Extract video ID from URL
+  const extractYouTubeVideoId = (url) => {
+    if (!url) return null;
+    
+    // Handle standard YouTube watch URLs
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  // Update current video ID when URL changes
+  useEffect(() => {
+    const videoId = extractYouTubeVideoId(url);
+    setCurrentVideoId(videoId);
+  }, [url]);
+
   // Handle URL submission
   const handleUrlSubmit = async (e) => {
     e.preventDefault();
@@ -168,6 +201,15 @@ const VideoInput = ({ onSubmit, language, setLoading, setError }) => {
       setError('Please enter a YouTube URL');
       return;
     }
+    
+    // Extract video ID and update state
+    const videoId = extractYouTubeVideoId(url.trim());
+    if (!videoId) {
+      setError('Invalid YouTube URL');
+      return;
+    }
+    
+    setCurrentVideoId(videoId);
     
     try {
       setLoading(true);
@@ -185,6 +227,48 @@ const VideoInput = ({ onSubmit, language, setLoading, setError }) => {
       setError(err.response?.data?.message || 'Error processing YouTube URL');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // Handle reset processing state
+  const handleResetProcessing = () => {
+    if (!currentVideoId) return;
+    
+    // Use the passed in handler
+    if (onResetProcessing) {
+      setLoading(true);
+      chrome.runtime.sendMessage(
+        { type: 'FORCE_RESET_PROCESSING', videoId: currentVideoId },
+        (response) => {
+          setLoading(false);
+          if (response && response.success) {
+            onResetProcessing();
+          } else {
+            setError('Failed to reset processing state');
+          }
+        }
+      );
+    }
+  };
+  
+  // Handle check processing status
+  const handleCheckStatus = () => {
+    if (!currentVideoId) return;
+    
+    // Use the passed in handler
+    if (onCheckStatus) {
+      setLoading(true);
+      chrome.runtime.sendMessage(
+        { type: 'GET_PROCESSING_STATUS', videoId: currentVideoId },
+        (response) => {
+          setLoading(false);
+          if (response && response.success) {
+            onCheckStatus(response.status);
+          } else {
+            setError('Failed to check processing status');
+          }
+        }
+      );
     }
   };
 

@@ -18,6 +18,9 @@
             flex-direction: column;
             gap: 16px;
         }
+        .non-react-ui {
+            display: none; /* Initially hidden, will be shown if React fails */
+        }
         header {
             display: flex;
             align-items: center;
@@ -59,9 +62,13 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- This div is where React will mount the app -->
+    <div id="root"></div>
+    
+    <!-- Fallback UI for when React is not loaded properly -->
+    <div class="container non-react-ui">
         <header>
-            <img src="icons/icon48.png" alt="Logo" class="logo">
+            <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgIDxwYXRoIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMkMyIDE3LjUyIDYuNDggMjIgMTIgMjJDMTcuNTIgMjIgMjIgMTcuNTIgMjIgMTJDMjIgNi40OCAxNy41MiAyIDEyIDJaTTEyIDIwQzcuNTkgMjAgNCAxNi40MSA0IDEyQzQgNy41OSA3LjU5IDQgMTIgNEMxNi40MSA0IDIwIDcuNTkgMjAgMTJDMjAgMTYuNDEgMTYuNDEgMjAgMTIgMjBaIiBmaWxsPSIjRkYwMDAwIi8+CiAgICA8cGF0aCBkPSJNMTIuNSA3SDExVjEzTDE2LjIgMTYuMkwxNyAxNC45TDEyLjUgMTIuMlY3WiIgZmlsbD0iI0ZGMDAwMCIvPgo8L3N2Zz4K" alt="Logo" class="logo">
             <h1>YouTube Smart Chapters AI</h1>
         </header>
         
@@ -70,6 +77,7 @@
         </div>
         
         <button id="analyzeCurrentVideo">Analyze Current Video</button>
+        <button id="openSettings" style="background-color: #2196F3;">API Settings</button>
         
         <div class="instructions">
             To use:
@@ -80,8 +88,47 @@
                 <li>Copy and use the generated content</li>
             </ol>
         </div>
+
+        <!-- Settings Panel (hidden by default) -->
+        <div id="settingsPanel" style="display: none; border: 1px solid #ccc; border-radius: 4px; padding: 16px; margin-top: 16px;">
+            <h2 style="font-size: 16px; margin-top: 0;">API Settings</h2>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="openaiKey" style="display: block; margin-bottom: 4px; font-weight: bold;">OpenAI API Key:</label>
+                <input type="password" id="openaiKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <label style="display: flex; align-items: center; margin-top: 4px;">
+                    <input type="checkbox" id="showOpenaiKey"> Show Key
+                </label>
+            </div>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="googleKey" style="display: block; margin-bottom: 4px; font-weight: bold;">Google AI API Key:</label>
+                <input type="password" id="googleKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <label style="display: flex; align-items: center; margin-top: 4px;">
+                    <input type="checkbox" id="showGoogleKey"> Show Key
+                </label>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between;">
+                <button id="saveKeys" style="background-color: #4CAF50;">Save Keys</button>
+                <button id="closeSettings" style="background-color: #9E9E9E;">Close</button>
+            </div>
+            
+            <div id="settingsMessage" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;"></div>
+        </div>
     </div>
 
-    <script src="index.js"></script>
+    <!-- Error container for displaying errors -->
+    <div id="extension-error" style="display: none; background-color: #ffebee; color: #d32f2f; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 14px;"></div>
+    
+    <!-- Load error handlers first -->
+    <script src="errorHandlers.js"></script>
+    
+    <!-- Then load our vanilla JS handlers -->
+    <script src="buttonHandlers.js"></script>
+    <script src="extensionInit.js"></script>
+    
+    <!-- Load our DOM content handler -->
+    <script src="domContentHandler.js"></script>
 </body>
 </html>

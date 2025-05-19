@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Container, Paper, Typography, CircularProgress } from '@mui/material';
+/* global chrome */
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, Container, Paper, Typography, CircularProgress, Alert } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { getDirection } from './styles/theme';
 import MainNavbar from './components/layout/MainNavbar';
@@ -27,6 +28,7 @@ function App() {
     google: false
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState(null);
   
   // Create a custom theme with the correct direction based on language
   const customTheme = React.useMemo(() => {
@@ -36,21 +38,44 @@ function App() {
     });
   }, [language]);
 
-  // Check API keys on component mount
+// Check API keys on component mount
   useEffect(() => {
     const checkKeys = async () => {
       try {
-        const openaiStatus = await checkApiKeys('openai');
-        const googleStatus = await checkApiKeys('google');
+        // First, check if we're in a Chrome extension context
+        const isExtensionContext = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync;
         
-        setApiKeysStatus({
-          openai: openaiStatus,
-          google: googleStatus
-        });
-        
-        // If no API keys are set, show settings panel
-        if (!openaiStatus && !googleStatus) {
-          setShowSettings(true);
+        if (isExtensionContext) {
+          // In extension context, check Chrome storage
+          chrome.storage.sync.get(['apiKeys'], (result) => {
+            const apiKeys = result.apiKeys || {};
+            const openaiStatus = !!apiKeys.openai;
+            const googleStatus = !!apiKeys.google;
+            
+            setApiKeysStatus({
+              openai: openaiStatus,
+              google: googleStatus
+            });
+            
+            // If no API keys are set, show settings panel
+            if (!openaiStatus && !googleStatus) {
+              setShowSettings(true);
+            }
+          });
+        } else {
+          // Regular web app context, use the API service
+          const openaiStatus = await checkApiKeys('openai');
+          const googleStatus = await checkApiKeys('google');
+          
+          setApiKeysStatus({
+            openai: openaiStatus,
+            google: googleStatus
+          });
+          
+          // If no API keys are set, show settings panel
+          if (!openaiStatus && !googleStatus) {
+            setShowSettings(true);
+          }
         }
       } catch (err) {
         console.error('Error checking API keys:', err);
@@ -109,7 +134,27 @@ function App() {
   // Handle error dismissal
   const handleErrorDismiss = () => {
     setError(null);
+    setProcessingStatus(null);
   };
+  
+  // Handle processing reset
+  const handleProcessingReset = useCallback(() => {
+    setError(null);
+    setProcessingStatus({
+      type: 'success',
+      message: 'Processing reset successfully. You can try again.'
+    });
+    
+    // Clear the success message after a delay
+    setTimeout(() => {
+      setProcessingStatus(null);
+    }, 3000);
+  }, []);
+  
+  // Handle processing status update
+  const handleProcessingStatus = useCallback((status) => {
+    setProcessingStatus(status);
+  }, []);
 
   // Handle process restart
   const handleRestart = () => {
@@ -146,8 +191,19 @@ function App() {
           {error && (
             <ErrorAlert 
               error={error} 
-              onDismiss={handleErrorDismiss} 
+              onDismiss={handleErrorDismiss}
+              videoId={videoData?.data?.videoId || null}
+              onReset={handleProcessingReset}
+              onCheckStatus={handleProcessingStatus}
             />
+          )}
+          
+          {processingStatus && processingStatus.type === 'success' && (
+            <Box sx={{ mb: 3 }}>
+              <Alert severity="success">
+                {processingStatus.message}
+              </Alert>
+            </Box>
           )}
           
           {showSettings && (
@@ -176,6 +232,10 @@ function App() {
                 language={language}
                 setLoading={setLoading}
                 setError={setError}
+                error={error}
+                processingStatus={processingStatus}
+                onResetProcessing={handleProcessingReset}
+                onCheckStatus={handleProcessingStatus}
               />
             </Paper>
           )}

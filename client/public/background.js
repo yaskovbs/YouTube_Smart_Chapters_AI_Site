@@ -5,8 +5,30 @@
  * the extension, content script, and YouTube pages.
  */
 
-// Track processing state
+// Track processing state with timeout mechanism
 const processingVideos = new Map();
+const PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes timeout
+
+/**
+ * Clear a video's processing state after a timeout period
+ * @param {string} videoId - YouTube video ID to clear after timeout
+ */
+function setProcessingTimeout(videoId) {
+  setTimeout(() => {
+    if (processingVideos.has(videoId)) {
+      const currentState = processingVideos.get(videoId);
+      // Only clear if it's still in 'processing' status
+      if (currentState.status === 'processing') {
+        console.log(`Processing timeout reached for video ${videoId}, clearing state`);
+        processingVideos.set(videoId, {
+          ...currentState,
+          status: 'error',
+          error: 'Processing timeout reached'
+        });
+      }
+    }
+  }, PROCESSING_TIMEOUT_MS);
+}
 
 // Listen for installation events
 chrome.runtime.onInstalled.addListener((details) => {
@@ -75,11 +97,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Check if this video is already being processed
     if (processingVideos.has(videoId)) {
-      sendResponse({ 
-        success: false, 
-        message: 'This video is already being processed' 
-      });
-      return true;
+      const currentState = processingVideos.get(videoId);
+      
+      // If it's stuck in processing for over 10 minutes, reset it
+      if (currentState.status === 'processing' && 
+          (Date.now() - currentState.startTime) > PROCESSING_TIMEOUT_MS) {
+        console.log(`Found stalled processing for video ${videoId}, resetting`);
+        // Let it continue to the processing
+      } 
+      // If it has an error or is in a non-processing state, allow restart
+      else if (currentState.status === 'error') {
+        console.log(`Found failed processing for video ${videoId}, allowing restart`);
+        // Let it continue to the processing
+      }
+      // Otherwise, it's actively being processed
+      else {
+        sendResponse({ 
+          success: false, 
+          message: 'This video is already being processed. Please try again or open the extension popup for more options.'
+        });
+        return true;
+      }
     }
     
     // Store processing state
@@ -88,6 +126,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       startTime: Date.now(),
       info: videoInfo
     });
+    
+    // Set a timeout to clear the processing state if it gets stuck
+    setProcessingTimeout(videoId);
     
     // Begin processing on the backend
     processVideoOnBackend(videoId, videoInfo)
@@ -141,6 +182,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const status = processingVideos.get(videoId) || { status: 'not_found' };
     sendResponse({ success: true, status });
     return true;
+  } else if (message.type === 'CANCEL_PROCESSING') {
+    // Allow cancellation of a processing video
+    const { videoId } = message;
+    if (processingVideos.has(videoId)) {
+      // Update status to cancelled
+      const currentState = processingVideos.get(videoId);
+      processingVideos.set(videoId, {
+        ...currentState,
+        status: 'cancelled',
+        endTime: Date.now()
+      });
+      sendResponse({ success: true, message: 'Processing cancelled' });
+    } else {
+      sendResponse({ success: false, message: 'Video not being processed' });
+    }
+    return true;
+  } else if (message.type === 'FORCE_RESET_PROCESSING') {
+    // Emergency option to force reset processing state for a video
+    const { videoId } = message;
+    if (videoId) {
+      if (processingVideos.has(videoId)) {
+        processingVideos.delete(videoId);
+        sendResponse({ success: true, message: 'Processing state reset successfully' });
+      } else {
+        sendResponse({ success: false, message: 'Video not found in processing queue' });
+      }
+    } else {
+      // Reset all processing if no specific videoId provided
+      processingVideos.clear();
+      sendResponse({ success: true, message: 'All processing states reset successfully' });
+    }
+    return true;
   }
 });
 
@@ -153,22 +226,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function processVideoOnBackend(videoId, videoInfo) {
   // This function would normally make API calls to the backend service
   // For this implementation, we'll simulate the process
+  const MAX_RETRIES = 3; // Maximum number of retries for network operations
+  const RETRY_DELAY = 2000; // Delay between retries in milliseconds
+
+  // Helper function to check server availability before making requests
+  const checkServerAvailability = async (url) => {
+    try {
+      const response = await fetch(`${url}/health`, { 
+        method: 'GET', 
+        timeout: 5000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.ok;
+    } catch (error) {
+      console.warn(`Server availability check failed: ${error.message}`);
+      return false;
+    }
+  };
+
+  // Helper function to perform fetch with retry logic
+  const fetchWithRetry = async (url, options, retries = MAX_RETRIES) => {
+    try {
+      const response = await fetch(url, options);
+      return response;
+    } catch (error) {
+      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        if (retries > 0) {
+          console.log(`Network request failed, retrying... (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          return fetchWithRetry(url, options, retries - 1);
+        } else {
+          throw new Error('השרת אינו זמין. בדוק את חיבור האינטרנט או שהשרת פעיל.');
+        }
+      }
+      throw error;
+    }
+  };
   
   return new Promise((resolve, reject) => {
     // Get the backend URL from storage
     chrome.storage.sync.get(['backendUrl'], async (result) => {
       try {
-        const backendUrl = result.backendUrl || 'http://localhost:5000'; // Default to localhost
+        const backendUrl = result.backendUrl || 'http://localhost:8000'; // Default to localhost
+        
+        // Check if server is available
+        const isServerAvailable = await checkServerAvailability(backendUrl);
+        if (!isServerAvailable) {
+          throw new Error('השרת אינו זמין כרגע. אנא נסה שוב מאוחר יותר.');
+        }
         
         // First, process the YouTube URL
-        const videoResponse = await fetch(`${backendUrl}/api/video/process-url`, {
+        const videoResponse = await fetchWithRetry(`${backendUrl}/api/video/process-url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${videoId}` })
         });
         
         if (!videoResponse.ok) {
-          throw new Error('Failed to process video URL');
+          const errorData = await videoResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to process video URL');
         }
         
         const videoData = await videoResponse.json();
@@ -189,7 +305,8 @@ async function processVideoOnBackend(videoId, videoInfo) {
         });
         
         if (!transcriptionResponse.ok) {
-          throw new Error('Failed to generate transcription');
+          const errorData = await transcriptionResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to generate transcription');
         }
         
         const transcriptionData = await transcriptionResponse.json();
@@ -209,7 +326,8 @@ async function processVideoOnBackend(videoId, videoInfo) {
         });
         
         if (!analysisResponse.ok) {
-          throw new Error('Failed to analyze content');
+          const errorData = await analysisResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to analyze content');
         }
         
         const analysisData = await analysisResponse.json();
@@ -229,7 +347,8 @@ async function processVideoOnBackend(videoId, videoInfo) {
         });
         
         if (!chaptersResponse.ok) {
-          throw new Error('Failed to generate chapters');
+          const errorData = await chaptersResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to generate chapters');
         }
         
         const chaptersData = await chaptersResponse.json();
@@ -249,7 +368,8 @@ async function processVideoOnBackend(videoId, videoInfo) {
         });
         
         if (!metadataResponse.ok) {
-          throw new Error('Failed to generate metadata');
+          const errorData = await metadataResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to generate metadata');
         }
         
         const metadataData = await metadataResponse.json();
@@ -267,7 +387,36 @@ async function processVideoOnBackend(videoId, videoInfo) {
           metadata: metadataData.data.metadata
         });
       } catch (error) {
-        reject(error);
+        console.error('Error processing video:', error);
+        // Extract error message to prevent [object Object] errors
+        let errorMessage = 'An unknown error occurred during video processing';
+        
+        // Network error handling
+        if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+          errorMessage = 'לא ניתן להתחבר לשרת. אנא בדוק את חיבור האינטרנט או שהשרת זמין.';
+        } else if (error && typeof error === 'object') {
+          if (error.message) {
+            errorMessage = error.message;
+          } else if (error.toString && error.toString() !== '[object Object]') {
+            errorMessage = error.toString();
+          } else if (error.statusText) {
+            errorMessage = error.statusText;
+          }
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        }
+        
+        // Display more helpful error messages
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+          if (tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'SHOW_ERROR_NOTIFICATION',
+              error: errorMessage
+            });
+          }
+        });
+        
+        reject(new Error(errorMessage));
       }
     });
   });

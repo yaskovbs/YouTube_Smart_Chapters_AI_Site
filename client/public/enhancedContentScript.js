@@ -176,7 +176,19 @@ function createExtensionUI() {
   });
   
   const openExtensionButton = createButton('Open Full Extension', '#065FD4', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_EXTENSION_POPUP' });
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      try {
+        chrome.runtime.sendMessage({ type: 'OPEN_EXTENSION_POPUP' }, function(response) {
+          if (chrome.runtime.lastError) {
+            console.error('Error opening extension popup:', chrome.runtime.lastError);
+          }
+        });
+      } catch (error) {
+        console.error('Error opening extension popup:', error);
+      }
+    } else {
+      console.error('Chrome runtime not available');
+    }
   });
   
   actionBar.appendChild(generateButton);
@@ -258,32 +270,313 @@ function handleGenerateSmartChapters() {
   const videoInfo = extractVideoInfo();
   
   // Send message to background script to start processing
+  try {
+    if (typeof chrome === 'undefined' || !chrome.runtime) {
+      updateContentArea(`
+        <div style="color: #d32f2f; padding: 16px; text-align: center;">
+          <p>Error: Chrome extension APIs not available.</p>
+          <p>Please reload the page or reinstall the extension.</p>
+        </div>
+      `);
+      isProcessing = false;
+      return;
+    }
+
+    chrome.runtime.sendMessage(
+      { 
+        type: 'PROCESS_YOUTUBE_VIDEO', 
+        videoId: currentVideoId,
+        videoInfo: videoInfo && videoInfo.data ? videoInfo.data : { videoId: currentVideoId }
+      }, 
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Error sending message:', chrome.runtime.lastError);
+          updateContentArea(`
+            <div style="color: #d32f2f; padding: 16px; text-align: center;">
+              <p>Error: ${chrome.runtime.lastError.message || 'Could not communicate with extension'}</p>
+              <p>Please reload the page or reinstall the extension.</p>
+            </div>
+          `);
+          isProcessing = false;
+          return;
+        }
+        if (response && response.success) {
+          // Show instruction to open the extension popup
+          updateContentArea(`
+            <div style="text-align: center; padding: 16px;">
+              <p>Video analysis started! Open the extension popup to view results.</p>
+              <p>This may take a few minutes depending on the video length.</p>
+            </div>
+          `);
+        } else {
+          // Show error with recovery options
+          const errorMessage = response ? response.message : 'Could not start video processing';
+          const isAlreadyProcessingError = errorMessage.includes('already being processed');
+          
+          let errorHtml = `
+            <div style="color: #d32f2f; padding: 16px;">
+              <p>Error: ${errorMessage}</p>
+          `;
+          
+          // If it's the "already being processed" error, offer more options
+          if (isAlreadyProcessingError) {
+            errorHtml += `
+              <p>This could happen if:</p>
+              <ul style="text-align: left; margin-bottom: 16px;">
+                <li>You already started processing this video</li>
+                <li>A previous processing attempt didn't complete properly</li>
+              </ul>
+              <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
+                <button id="check-status-btn" style="
+                  background-color: #065FD4;
+                  color: white;
+                  border: none;
+                  border-radius: 18px;
+                  padding: 8px 16px;
+                  font-size: 14px;
+                  font-weight: 500;
+                  cursor: pointer;
+                ">Check Status</button>
+                <button id="reset-processing-btn" style="
+                  background-color: #d32f2f;
+                  color: white;
+                  border: none;
+                  border-radius: 18px;
+                  padding: 8px 16px;
+                  font-size: 14px;
+                  font-weight: 500;
+                  cursor: pointer;
+                ">Reset Processing</button>
+              </div>
+            `;
+          } else {
+            errorHtml += `<p>Please try again or open the extension popup for more options.</p>`;
+          }
+          
+          errorHtml += `</div>`;
+          updateContentArea(errorHtml);
+          
+          // Add event listeners for the recovery buttons
+          if (isAlreadyProcessingError) {
+            setTimeout(() => {
+              // Status check button
+              const checkStatusBtn = document.getElementById('check-status-btn');
+              if (checkStatusBtn) {
+                checkStatusBtn.addEventListener('click', () => {
+                  checkVideoProcessingStatus();
+                });
+              }
+              
+              // Reset processing button
+              const resetProcessingBtn = document.getElementById('reset-processing-btn');
+              if (resetProcessingBtn) {
+                resetProcessingBtn.addEventListener('click', () => {
+                  resetVideoProcessing();
+                });
+              }
+            }, 100);
+          }
+        }
+        
+        isProcessing = false;
+      }
+    );
+  } catch (error) {
+    console.error('Error processing video:', error);
+    // Get a meaningful error message even if it's an object
+    let errorMessage = 'An unexpected error occurred';
+    if (error) {
+      if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else if (error.toString && error.toString() !== '[object Object]') {
+        errorMessage = error.toString();
+      }
+    }
+    updateContentArea(`
+      <div style="color: #d32f2f; padding: 16px; text-align: center;">
+        <p>Error: ${errorMessage}</p>
+        <p>Please try again later or contact support.</p>
+        <p>If this issue persists, check that your API keys are correctly set.</p>
+      </div>
+    `);
+    isProcessing = false;
+  }
+}
+
+/**
+ * Check the current processing status of a video
+ */
+function checkVideoProcessingStatus() {
+  updateContentArea('Checking status...', true);
+  
   chrome.runtime.sendMessage(
     { 
-      type: 'PROCESS_YOUTUBE_VIDEO', 
-      videoId: currentVideoId,
-      videoInfo: videoInfo.data
+      type: 'GET_PROCESSING_STATUS', 
+      videoId: currentVideoId
     }, 
     (response) => {
       if (response && response.success) {
-        // Show instruction to open the extension popup
-        updateContentArea(`
-          <div style="text-align: center; padding: 16px;">
-            <p>Video analysis started! Open the extension popup to view results.</p>
-            <p>This may take a few minutes depending on the video length.</p>
-          </div>
-        `);
+        const status = response.status;
+        
+        if (status.status === 'not_found') {
+          updateContentArea(`
+            <div style="padding: 16px; text-align: center;">
+              <p>This video is not currently being processed.</p>
+              <p>You can try generating chapters again.</p>
+            </div>
+          `);
+        } else {
+          // Format the status display
+          let statusHtml = `
+            <div style="padding: 16px;">
+              <h3 style="margin-top: 0; font-size: 14px; font-weight: 500;">Processing Status:</h3>
+              <div style="background-color: #f9f9f9; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                <p><strong>Status:</strong> ${status.status}</p>
+                <p><strong>Started:</strong> ${new Date(status.startTime).toLocaleString()}</p>
+          `;
+          
+          if (status.error) {
+            statusHtml += `<p><strong>Error:</strong> ${status.error}</p>`;
+          }
+          
+          if (status.status === 'processing') {
+            const elapsedMinutes = Math.round((Date.now() - status.startTime) / 60000);
+            statusHtml += `<p><strong>Processing time:</strong> ${elapsedMinutes} minutes</p>`;
+            
+            // Add cancel button for in-progress processing
+            statusHtml += `
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <button id="cancel-processing-btn" style="
+                  background-color: #d32f2f;
+                  color: white;
+                  border: none;
+                  border-radius: 18px;
+                  padding: 8px 16px;
+                  font-size: 14px;
+                  font-weight: 500;
+                  cursor: pointer;
+                ">Cancel Processing</button>
+              </div>
+            `;
+          } else {
+            // For completed or error states, add reset button
+            statusHtml += `
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <button id="reset-processing-btn" style="
+                  background-color: #065FD4;
+                  color: white;
+                  border: none;
+                  border-radius: 18px;
+                  padding: 8px 16px;
+                  font-size: 14px;
+                  font-weight: 500;
+                  cursor: pointer;
+                ">Reset & Try Again</button>
+              </div>
+            `;
+          }
+          
+          statusHtml += `</div>`;
+          updateContentArea(statusHtml);
+          
+          // Add event listeners for action buttons
+          setTimeout(() => {
+            const cancelBtn = document.getElementById('cancel-processing-btn');
+            if (cancelBtn) {
+              cancelBtn.addEventListener('click', () => {
+                cancelVideoProcessing();
+              });
+            }
+            
+            const resetBtn = document.getElementById('reset-processing-btn');
+            if (resetBtn) {
+              resetBtn.addEventListener('click', () => {
+                resetVideoProcessing();
+              });
+            }
+          }, 100);
+        }
       } else {
-        // Show error
+        // Get error message in user-friendly format
+        let errorMessage = 'Unknown error';
+        if (response && response.message) {
+          errorMessage = response.message;
+        } else if (!response) {
+          errorMessage = 'No response received from the extension';
+        }
+        
         updateContentArea(`
-          <div style="color: #d32f2f; padding: 16px;">
-            <p>Error: ${response ? response.message : 'Could not start video processing'}</p>
-            <p>Please try again or open the extension popup for more options.</p>
+          <div style="color: #d32f2f; padding: 16px; text-align: center;">
+            <p>Error checking processing status: ${errorMessage}</p>
+            <p>This could be due to connection issues or a server problem.</p>
+            <p>Please try refreshing the page or opening the extension popup.</p>
           </div>
         `);
       }
-      
-      isProcessing = false;
+    }
+  );
+}
+
+/**
+ * Cancel an in-progress video processing job
+ */
+function cancelVideoProcessing() {
+  updateContentArea('Cancelling...', true);
+  
+  chrome.runtime.sendMessage(
+    { 
+      type: 'CANCEL_PROCESSING', 
+      videoId: currentVideoId
+    }, 
+    (response) => {
+      if (response && response.success) {
+        updateContentArea(`
+          <div style="padding: 16px; text-align: center;">
+            <p>Processing cancelled successfully.</p>
+            <p>You can now try generating chapters again.</p>
+          </div>
+        `);
+      } else {
+        updateContentArea(`
+          <div style="color: #d32f2f; padding: 16px; text-align: center;">
+            <p>Error cancelling processing: ${response ? response.message : 'Unknown error'}</p>
+          </div>
+        `);
+      }
+    }
+  );
+}
+
+/**
+ * Reset the processing state for a video
+ */
+function resetVideoProcessing() {
+  updateContentArea('Resetting...', true);
+  
+  chrome.runtime.sendMessage(
+    { 
+      type: 'FORCE_RESET_PROCESSING', 
+      videoId: currentVideoId
+    }, 
+    (response) => {
+      if (response && response.success) {
+        updateContentArea(`
+          <div style="padding: 16px; text-align: center;">
+            <p>Processing state reset successfully.</p>
+            <p>You can now try generating chapters again.</p>
+          </div>
+        `);
+      } else {
+        updateContentArea(`
+          <div style="color: #d32f2f; padding: 16px; text-align: center;">
+            <p>Error resetting processing: ${response ? response.message : 'Unknown error'}</p>
+          </div>
+        `);
+      }
     }
   );
 }
@@ -454,9 +747,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Display chapters in our UI
     displayChapters(message.chapters);
     sendResponse({ success: true });
+  } else if (message.type === 'SHOW_ERROR_NOTIFICATION') {
+    // Display error notification
+    showErrorNotification(message.error);
+    sendResponse({ success: true });
   }
   return true; // Required to use sendResponse asynchronously
 });
+
+/**
+ * Show an error notification to the user
+ * @param {string} errorMessage - The error message to display
+ */
+function showErrorNotification(errorMessage) {
+  if (!smartChaptersContainer) return;
+  
+  const content = smartChaptersContainer.querySelector('div:nth-child(2)');
+  if (!content) return;
+  
+  let errorHtml = `
+    <div style="color: #d32f2f; padding: 16px; text-align: center; background-color: #ffebee; border-radius: 8px; margin-bottom: 16px;">
+      <h3 style="margin-top: 0; font-size: 16px; color: #d32f2f;">שגיאת עיבוד</h3>
+      <p style="margin-bottom: 16px;">${errorMessage}</p>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <p style="font-size: 14px; margin: 0;">הצעות לפתרון:</p>
+        <ul style="text-align: right; padding-right: 20px; margin-top: 8px;">
+          <li>בדוק את חיבור האינטרנט שלך</li>
+          <li>וודא שהשרת פועל ונגיש</li>
+          <li>בדוק שמפתחות ה-API תקינים</li>
+          <li>נסה לרענן את העמוד ולנסות שוב</li>
+        </ul>
+        <button id="retry-connection-btn" style="
+          background-color: #d32f2f;
+          color: white;
+          border: none;
+          border-radius: 18px;
+          padding: 8px 16px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          margin-top: 8px;
+        ">נסה שוב</button>
+      </div>
+    </div>
+  `;
+  
+  content.innerHTML = errorHtml;
+  
+  // Add event listener for retry button
+  setTimeout(() => {
+    const retryBtn = document.getElementById('retry-connection-btn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => {
+        // Show loading indicator
+        updateContentArea('טוען...', true);
+        // Wait a moment then try again
+        setTimeout(() => {
+          handleGenerateSmartChapters();
+        }, 1000);
+      });
+    }
+  }, 100);
+  
+  isProcessing = false;
+}
 
 // Run initialization when the page is fully loaded
 if (document.readyState === 'complete') {

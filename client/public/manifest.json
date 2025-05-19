@@ -3,10 +3,14 @@
   "name": "YouTube Smart Chapters AI",
   "version": "1.0.0",
   "description": "Generate YouTube chapters, titles, descriptions, and tags automatically using AI",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.youtube.com/*"
@@ -18,7 +22,8 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["contentScript.js", "enhancedContentScript.js"]
+      "js": ["contentScript.js", "enhancedContentScript.js"],
+      "run_at": "document_idle"
     }
   ],
   "background": {

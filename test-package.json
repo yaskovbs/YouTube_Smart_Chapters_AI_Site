@@ -1,0 +1,14 @@
+{
+  "name": "youtube-smart-chapters-ai-tests",
+  "version": "1.0.0",
+  "description": "Testing utilities for YouTube Smart Chapters AI extension",
+  "scripts": {
+    "test": "node test-extension.js",
+    "test:extension": "node test-extension.js",
+    "setup": "npm install"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "path": "^0.12.7"
+  }
+}

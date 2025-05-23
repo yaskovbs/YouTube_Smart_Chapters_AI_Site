@@ -13,6 +13,12 @@ YouTube Smart Chapters AI helps content creators save time and improve their vid
 
 The extension uses advanced AI from OpenAI and Google to analyze video content and create high-quality metadata.
 
+## 🌐 Live Demo
+
+**Try the extension online:** [https://youtubesmartchaptersai.pages.dev](https://youtubesmartchaptersai.pages.dev)
+
+Visit our website to learn more about the extension features, see screenshots, and get installation instructions.
+
 ## Features
 
 - **Automatic Transcription**: Converts video audio to text using speech recognition technology

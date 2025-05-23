@@ -27,18 +27,18 @@ import { aiService } from '../../services/apiService';
 /**
  * Settings panel for API key configuration
  * @param {Object} props - Component props
- * @param {Object} props.apiKeysStatus - Status of API keys (openai, google)
+ * @param {Object} props.apiKeysStatus - Status of API keys (openai, assemblyai)
  * @param {Function} props.onApiKeyUpdate - Function to call when API key is updated
  * @param {Function} props.onClose - Function to call when closing the panel
  */
 const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
   const [tab, setTab] = useState(0);
   const [openaiKey, setOpenaiKey] = useState('');
-  const [googleKey, setGoogleKey] = useState('');
+  const [assemblyaiKey, setAssemblyaiKey] = useState('');
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showGoogleKey, setShowGoogleKey] = useState(false);
+  const [showAssemblyaiKey, setShowAssemblyaiKey] = useState(false);
   const [openaiKeyError, setOpenaiKeyError] = useState('');
-  const [googleKeyError, setGoogleKeyError] = useState('');
+  const [assemblyaiKeyError, setAssemblyaiKeyError] = useState('');
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -52,7 +52,7 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
   // Save OpenAI API key
   const handleSaveOpenaiKey = async () => {
     if (!openaiKey.trim()) {
-      setOpenaiKeyError('API key is required');
+      setOpenaiKeyError('מפתח API נדרש');
       return;
     }
 
@@ -60,9 +60,16 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
       setSaving(true);
       setOpenaiKeyError('');
       
-      // This would need validation of the key format in a real app
+      // Basic validation of the key format
       if (openaiKey.length < 20) {
-        setOpenaiKeyError('API key should be at least 20 characters');
+        setOpenaiKeyError('מפתח API צריך להיות לפחות 20 תווים');
+        setSaving(false);
+        return;
+      }
+
+      // Check if it starts with sk- for OpenAI keys
+      if (!openaiKey.startsWith('sk-')) {
+        setOpenaiKeyError('מפתח OpenAI צריך להתחיל ב-sk-');
         setSaving(false);
         return;
       }
@@ -70,46 +77,48 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
       const response = await aiService.saveApiKey('openai', openaiKey);
       
       if (response.success) {
-        setSuccessMessage('OpenAI API key saved successfully');
+        setSuccessMessage('מפתח OpenAI נשמר בהצלחה');
         onApiKeyUpdate('openai', true);
+        setOpenaiKey(''); // Clear the field for security
       } else {
-        setOpenaiKeyError(response.message || 'Failed to save API key');
+        setOpenaiKeyError(response.message || 'שגיאה בשמירת מפתח ה-API');
       }
     } catch (error) {
-      setOpenaiKeyError(error.message || 'Error saving API key');
+      setOpenaiKeyError(error.message || 'שגיאה בשמירת מפתח ה-API');
     } finally {
       setSaving(false);
     }
   };
 
-  // Save Google API key
-  const handleSaveGoogleKey = async () => {
-    if (!googleKey.trim()) {
-      setGoogleKeyError('API key is required');
+  // Save AssemblyAI API key
+  const handleSaveAssemblyaiKey = async () => {
+    if (!assemblyaiKey.trim()) {
+      setAssemblyaiKeyError('מפתח API נדרש');
       return;
     }
 
     try {
       setSaving(true);
-      setGoogleKeyError('');
+      setAssemblyaiKeyError('');
       
-      // This would need validation of the key format in a real app
-      if (googleKey.length < 20) {
-        setGoogleKeyError('API key should be at least 20 characters');
+      // Basic validation of the key format
+      if (assemblyaiKey.length < 20) {
+        setAssemblyaiKeyError('מפתח API צריך להיות לפחות 20 תווים');
         setSaving(false);
         return;
       }
       
-      const response = await aiService.saveApiKey('google', googleKey);
+      const response = await aiService.saveApiKey('assemblyai', assemblyaiKey);
       
       if (response.success) {
-        setSuccessMessage('Google AI API key saved successfully');
-        onApiKeyUpdate('google', true);
+        setSuccessMessage('מפתח AssemblyAI נשמר בהצלחה');
+        onApiKeyUpdate('assemblyai', true);
+        setAssemblyaiKey(''); // Clear the field for security
       } else {
-        setGoogleKeyError(response.message || 'Failed to save API key');
+        setAssemblyaiKeyError(response.message || 'שגיאה בשמירת מפתח ה-API');
       }
     } catch (error) {
-      setGoogleKeyError(error.message || 'Error saving API key');
+      setAssemblyaiKeyError(error.message || 'שגיאה בשמירת מפתח ה-API');
     } finally {
       setSaving(false);
     }
@@ -123,7 +132,7 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
       fullWidth
     >
       <DialogTitle>
-        Settings
+        הגדרות
         <IconButton
           aria-label="close"
           onClick={onClose}
@@ -147,8 +156,8 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
             indicatorColor="primary"
             textColor="primary"
           >
-            <Tab label="OpenAI API Key" />
-            <Tab label="Google API Key" />
+            <Tab label="מפתח OpenAI" />
+            <Tab label="מפתח AssemblyAI" />
           </Tabs>
         </Paper>
         
@@ -167,7 +176,7 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <KeyIcon sx={{ mr: 1, color: 'primary.main' }} />
-              <Typography variant="h6">OpenAI API Key</Typography>
+              <Typography variant="h6">מפתח OpenAI API</Typography>
               {apiKeysStatus.openai && (
                 <CheckCircleIcon 
                   color="success"
@@ -178,14 +187,26 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
             </Box>
             
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Enter your OpenAI API key to use ChatGPT for content analysis and chapter generation.
-              You can get an API key from <a href="https://platform.openai.com/account/api-keys" target="_blank" rel="noopener noreferrer">OpenAI's website</a>.
+              הזן את מפתח ה-API של OpenAI כדי להשתמש ב-ChatGPT לניתוח תוכן ויצירת פרקים.
+              ניתן לקבל מפתח API מ-<a href="https://platform.openai.com/account/api-keys" target="_blank" rel="noopener noreferrer">האתר של OpenAI</a>.
             </Typography>
+            
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>הוראות:</strong><br />
+                1. היכנס לאתר OpenAI Platform<br />
+                2. צור חשבון או התחבר<br />
+                3. עבור ל-API Keys<br />
+                4. צור מפתח חדש<br />
+                5. העתק והדבק כאן
+              </Typography>
+            </Alert>
             
             <TextField
               fullWidth
               variant="outlined"
-              label="OpenAI API Key"
+              label="מפתח OpenAI API"
+              placeholder="sk-..."
               value={openaiKey}
               onChange={(e) => setOpenaiKey(e.target.value)}
               error={!!openaiKeyError}
@@ -201,7 +222,7 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
                   onChange={() => setShowOpenaiKey(!showOpenaiKey)}
                 />
               }
-              label="Show API Key"
+              label="הצג מפתח API"
             />
             
             <Box sx={{ mt: 2 }}>
@@ -212,19 +233,19 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
                 onClick={handleSaveOpenaiKey}
                 disabled={saving || !openaiKey.trim()}
               >
-                Save OpenAI API Key
+                שמור מפתח OpenAI
               </Button>
             </Box>
           </Box>
         )}
         
-        {/* Google API Key Tab */}
+        {/* AssemblyAI API Key Tab */}
         {tab === 1 && (
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <KeyIcon sx={{ mr: 1, color: 'primary.main' }} />
-              <Typography variant="h6">Google AI API Key</Typography>
-              {apiKeysStatus.google && (
+              <Typography variant="h6">מפתח AssemblyAI API</Typography>
+              {apiKeysStatus.assemblyai && (
                 <CheckCircleIcon 
                   color="success"
                   fontSize="small"
@@ -234,30 +255,51 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
             </Box>
             
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Enter your Google AI Studio API key for transcription and content analysis.
-              You can get an API key from <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.
+              הזן את מפתח ה-API של AssemblyAI לתמלול וניתוח תוכן עם פרקים אוטומטיים.
+              ניתן לקבל מפתח API מ-<a href="https://www.assemblyai.com/" target="_blank" rel="noopener noreferrer">האתר של AssemblyAI</a>.
             </Typography>
+            
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>הוראות:</strong><br />
+                1. היכנס לאתר AssemblyAI<br />
+                2. צור חשבון או התחבר<br />
+                3. עבור ל-Dashboard<br />
+                4. העתק את מפתח ה-API<br />
+                5. הדבק כאן
+              </Typography>
+            </Alert>
+
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>יתרונות AssemblyAI:</strong><br />
+                • תמלול מדויק יותר<br />
+                • פרקים אוטומטיים מובנים<br />
+                • תמיכה בעברית ושפות נוספות<br />
+                • מהירות עיבוד מהירה יותר
+              </Typography>
+            </Alert>
             
             <TextField
               fullWidth
               variant="outlined"
-              label="Google AI API Key"
-              value={googleKey}
-              onChange={(e) => setGoogleKey(e.target.value)}
-              error={!!googleKeyError}
-              helperText={googleKeyError}
-              type={showGoogleKey ? 'text' : 'password'}
+              label="מפתח AssemblyAI API"
+              value={assemblyaiKey}
+              onChange={(e) => setAssemblyaiKey(e.target.value)}
+              error={!!assemblyaiKeyError}
+              helperText={assemblyaiKeyError}
+              type={showAssemblyaiKey ? 'text' : 'password'}
               sx={{ mb: 2 }}
             />
             
             <FormControlLabel
               control={
                 <Switch 
-                  checked={showGoogleKey}
-                  onChange={() => setShowGoogleKey(!showGoogleKey)}
+                  checked={showAssemblyaiKey}
+                  onChange={() => setShowAssemblyaiKey(!showAssemblyaiKey)}
                 />
               }
-              label="Show API Key"
+              label="הצג מפתח API"
             />
             
             <Box sx={{ mt: 2 }}>
@@ -265,19 +307,47 @@ const SettingsPanel = ({ apiKeysStatus, onApiKeyUpdate, onClose }) => {
                 variant="contained"
                 color="primary"
                 startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
-                onClick={handleSaveGoogleKey}
-                disabled={saving || !googleKey.trim()}
+                onClick={handleSaveAssemblyaiKey}
+                disabled={saving || !assemblyaiKey.trim()}
               >
-                Save Google API Key
+                שמור מפתח AssemblyAI
               </Button>
             </Box>
           </Box>
         )}
+        
+        <Divider sx={{ my: 3 }} />
+        
+        <Alert severity="info">
+          <Typography variant="body2">
+            <strong>המלצה:</strong> השתמש ב-AssemblyAI לתמלול (תוצאות טובות יותר) וב-OpenAI לניתוח ויצירת מטא-נתונים.
+            שני המפתחות יאפשרו לך לקבל את התוצאות הטובות ביותר.
+          </Typography>
+        </Alert>
+        
+        <Divider sx={{ my: 2 }} />
+        
+        <Box sx={{ textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            צריך עזרה? רוצה ללמוד עוד על התוסף?
+          </Typography>
+          <Button
+            variant="outlined"
+            color="primary"
+            onClick={() => window.open('https://youtubesmartchaptersai.pages.dev', '_blank')}
+            sx={{ mb: 1 }}
+          >
+            🌐 בקר באתר שלנו
+          </Button>
+          <Typography variant="caption" display="block" color="text.secondary">
+            מדריכים, צילומי מסך ומידע נוסף על התוסף
+          </Typography>
+        </Box>
       </DialogContent>
       
       <DialogActions>
         <Button onClick={onClose} color="primary">
-          Close
+          סגור
         </Button>
       </DialogActions>
     </Dialog>

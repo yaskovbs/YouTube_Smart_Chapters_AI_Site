@@ -56,3 +56,4 @@ $RECYCLE.BIN/
 # Chrome extension packaging
 *.zip
 *.crx
+server/uploads/*.mp4

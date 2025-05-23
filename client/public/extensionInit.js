@@ -36,20 +36,20 @@ function loadApiKeysOnOpen() {
                 const settingsPanel = document.getElementById('settingsPanel');
                 
                 // If no API keys are set, automatically open the settings panel
-                if ((!apiKeys.openai && !apiKeys.google) && settingsPanel) {
+                if ((!apiKeys.openai && !apiKeys.assemblyai) && settingsPanel) {
                     settingsPanel.style.display = 'block';
                 }
                 
                 // Update input fields if they exist
                 const openaiKeyInput = document.getElementById('openaiKey');
-                const googleKeyInput = document.getElementById('googleKey');
+                const assemblyaiKeyInput = document.getElementById('assemblyaiKey');
                 
                 if (apiKeys.openai && openaiKeyInput) {
                     openaiKeyInput.value = apiKeys.openai;
                 }
                 
-                if (apiKeys.google && googleKeyInput) {
-                    googleKeyInput.value = apiKeys.google;
+                if (apiKeys.assemblyai && assemblyaiKeyInput) {
+                    assemblyaiKeyInput.value = apiKeys.assemblyai;
                 }
             });
         }

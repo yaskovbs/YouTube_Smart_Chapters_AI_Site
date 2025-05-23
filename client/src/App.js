@@ -25,7 +25,7 @@ function App() {
   const [metadata, setMetadata] = useState(null);
   const [apiKeysStatus, setApiKeysStatus] = useState({
     openai: false,
-    google: false
+    assemblyai: false
   });
   const [showSettings, setShowSettings] = useState(false);
   const [processingStatus, setProcessingStatus] = useState(null);
@@ -50,30 +50,30 @@ function App() {
           chrome.storage.sync.get(['apiKeys'], (result) => {
             const apiKeys = result.apiKeys || {};
             const openaiStatus = !!apiKeys.openai;
-            const googleStatus = !!apiKeys.google;
+            const assemblyaiStatus = !!apiKeys.assemblyai;
             
             setApiKeysStatus({
               openai: openaiStatus,
-              google: googleStatus
+              assemblyai: assemblyaiStatus
             });
             
             // If no API keys are set, show settings panel
-            if (!openaiStatus && !googleStatus) {
+            if (!openaiStatus && !assemblyaiStatus) {
               setShowSettings(true);
             }
           });
         } else {
           // Regular web app context, use the API service
           const openaiStatus = await checkApiKeys('openai');
-          const googleStatus = await checkApiKeys('google');
+          const assemblyaiStatus = await checkApiKeys('assemblyai');
           
           setApiKeysStatus({
             openai: openaiStatus,
-            google: googleStatus
+            assemblyai: assemblyaiStatus
           });
           
           // If no API keys are set, show settings panel
-          if (!openaiStatus && !googleStatus) {
+          if (!openaiStatus && !assemblyaiStatus) {
             setShowSettings(true);
           }
         }
@@ -142,14 +142,14 @@ function App() {
     setError(null);
     setProcessingStatus({
       type: 'success',
-      message: 'Processing reset successfully. You can try again.'
+      message: language === 'he' ? 'העיבוד איופס בהצלחה. ניתן לנסות שוב.' : 'Processing reset successfully. You can try again.'
     });
     
     // Clear the success message after a delay
     setTimeout(() => {
       setProcessingStatus(null);
     }, 3000);
-  }, []);
+  }, [language]);
   
   // Handle processing status update
   const handleProcessingStatus = useCallback((status) => {
@@ -165,6 +165,7 @@ function App() {
     setMetadata(null);
     setCurrentStep(0);
     setError(null);
+    setProcessingStatus(null);
   };
 
   return (

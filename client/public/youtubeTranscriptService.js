@@ -1,0 +1,479 @@
+/**
+ * YouTube Transcript Service - extracts captions directly from YouTube
+ * Works without server or FFmpeg - completely client-side
+ * Extension version - same as website but for Chrome Extension
+ */
+
+class YouTubeTranscriptService {
+  constructor() {
+    this.corsProxies = [
+      // Updated working CORS proxies
+      'https://api.allorigins.win/get?url=',
+      'https://corsproxy.io/?',
+      'https://cors.bridged.cc/',
+      'https://yacdn.org/proxy/',
+      'https://api.codetabs.com/v1/proxy?quest=',
+    ];
+  }
+
+  /**
+   * Extract video ID from YouTube URL
+   * @param {string} url - YouTube URL
+   * @returns {string|null} - Video ID or null if invalid
+   */
+  extractVideoId(url) {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get transcript for a YouTube video
+   * @param {string} videoId - YouTube video ID
+   * @param {string} languageCode - Language code (optional, defaults to auto-detect)
+   * @returns {Promise<Object>} - Transcript data with timestamps
+   */
+  async getTranscript(videoId, languageCode = null) {
+    console.log(`🎬 Getting transcript for video: ${videoId} (language: ${languageCode || 'auto'})`);
+    
+    try {
+      // Get the video page HTML
+      console.log('📄 Fetching YouTube page...');
+      const pageResponse = await this.fetchVideoPage(videoId);
+      
+      if (!pageResponse || pageResponse.length < 1000) {
+        throw new Error('דף YouTube לא נטען כראוי');
+      }
+      
+      // Extract transcript URL from the page
+      console.log('🔍 Searching for transcript URL...');
+      const transcriptUrl = this.extractTranscriptUrl(pageResponse, languageCode);
+      
+      if (!transcriptUrl) {
+        throw new Error('לא נמצאו תמלילים זמינים לסרטון זה. ייתכן שהסרטון לא כולל תמלילים אוטומטיים או ידניים.');
+      }
+      
+      console.log('📥 Found transcript URL, downloading...');
+      // Fetch the actual transcript
+      const transcriptResponse = await this.fetchTranscriptData(transcriptUrl);
+      
+      // Parse and format the transcript
+      console.log('⚙️ Parsing transcript...');
+      const transcript = this.parseTranscript(transcriptResponse);
+      
+      console.log('✅ Transcript successfully retrieved!');
+      return {
+        success: true,
+        data: {
+          videoId,
+          language: languageCode || 'auto',
+          transcript: transcript.words,
+          fullText: transcript.fullText,
+          duration: transcript.duration,
+          source: 'youtube_captions'
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ Error getting transcript:', error);
+      
+      // More specific error messages
+      let errorMessage = error.message;
+      let suggestion = 'נסה עם סרטון אחר או בדוק שיש תמלילים זמינים';
+      
+      if (error.message.includes('fetch')) {
+        errorMessage = 'שגיאת רשת - לא ניתן לגשת לYouTube';
+        suggestion = 'בדוק את חיבור האינטרנט שלך ונסה שוב';
+      } else if (error.message.includes('תמלילים')) {
+        suggestion = 'נסה סרטון אחר שיש לו תמלילים או כתוביות';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage,
+        suggestion: suggestion
+      };
+    }
+  }
+
+  /**
+   * Fetch video page HTML with multiple proxy attempts
+   * @param {string} videoId - YouTube video ID
+   * @returns {Promise<string>} - Page HTML
+   */
+  async fetchVideoPage(videoId) {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    console.log(`🌐 Trying to fetch: ${url}`);
+    
+    let lastError = null;
+    
+    for (let i = 0; i < this.corsProxies.length; i++) {
+      const proxy = this.corsProxies[i];
+      try {
+        console.log(`🔄 Trying proxy ${i + 1}/${this.corsProxies.length}: ${proxy.split('?')[0]}...`);
+        
+        let proxyUrl;
+        if (proxy.includes('allorigins.win')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('codetabs.com')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else {
+          proxyUrl = proxy + encodeURIComponent(url);
+        }
+        
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json, text/html, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          let data;
+          
+          if (contentType.includes('application/json')) {
+            const jsonData = await response.json();
+            data = jsonData.contents || jsonData.body || jsonData.data || jsonData;
+          } else {
+            data = await response.text();
+          }
+          
+          if (typeof data === 'string' && data.length > 1000 && data.includes('youtube')) {
+            console.log(`✅ Proxy ${i + 1} succeeded`);
+            return data;
+          } else {
+            throw new Error('Invalid response format');
+          }
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.warn(`❌ Proxy ${i + 1} failed:`, error.message);
+        lastError = error;
+        continue;
+      }
+    }
+    
+    throw new Error(`כל שרתי ה-proxy נכשלו. השגיאה האחרונה: ${lastError?.message || 'לא ידוע'}`);
+  }
+
+  /**
+   * Extract transcript URL from page HTML
+   * @param {string} html - Page HTML
+   * @param {string} languageCode - Preferred language code
+   * @returns {string|null} - Transcript URL or null
+   */
+  extractTranscriptUrl(html, languageCode) {
+    try {
+      // Multiple patterns to find captions data
+      const captionPatterns = [
+        /"captions":.*?"playerCaptionsTracklistRenderer":\{"captionTracks":\[(.*?)\]/,
+        /"captionTracks":\[(.*?)\]/,
+        /playerCaptionsTracklistRenderer.*?captionTracks.*?\[(.*?)\]/
+      ];
+      
+      let match = null;
+      for (const pattern of captionPatterns) {
+        match = html.match(pattern);
+        if (match) break;
+      }
+      
+      if (!match) {
+        console.log('❌ No captions data found in page');
+        return null;
+      }
+      
+      const captionsData = match[1];
+      console.log(`📋 Found captions data: ${captionsData.substring(0, 200)}...`);
+      
+      let tracks;
+      try {
+        tracks = JSON.parse(`[${captionsData}]`);
+      } catch (parseError) {
+        // Try to fix common JSON issues
+        const fixedData = captionsData
+          .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":') // Add quotes to property names
+          .replace(/:\s*'([^']*?)'/g, ':"$1"') // Replace single quotes with double quotes
+          .replace(/,\s*}/g, '}') // Remove trailing commas
+          .replace(/,\s*]/g, ']');
+        
+        try {
+          tracks = JSON.parse(`[${fixedData}]`);
+        } catch (secondParseError) {
+          console.error('❌ Failed to parse captions JSON:', secondParseError);
+          return null;
+        }
+      }
+      
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        console.log('❌ No caption tracks found');
+        return null;
+      }
+      
+      console.log(`📺 Found ${tracks.length} caption tracks`);
+      tracks.forEach((track, index) => {
+        console.log(`  Track ${index + 1}: ${track.languageCode || 'unknown'} (${track.kind || 'manual'})`);
+      });
+      
+      // Find the best matching track
+      let selectedTrack = null;
+      
+      if (languageCode) {
+        // Look for exact language match
+        selectedTrack = tracks.find(track => 
+          track.languageCode === languageCode
+        );
+        console.log(`🎯 Looking for language: ${languageCode} - ${selectedTrack ? 'Found' : 'Not found'}`);
+      }
+      
+      if (!selectedTrack) {
+        // Fall back to auto-generated or first available
+        selectedTrack = tracks.find(track => track.kind === 'asr') || // Auto-generated
+                      tracks.find(track => track.languageCode === 'en') || // English fallback
+                      tracks.find(track => track.languageCode === 'he') || // Hebrew fallback
+                      tracks[0]; // First available
+        
+        if (selectedTrack) {
+          console.log(`🔄 Using fallback track: ${selectedTrack.languageCode} (${selectedTrack.kind || 'manual'})`);
+        }
+      }
+      
+      const transcriptUrl = selectedTrack?.baseUrl;
+      if (transcriptUrl) {
+        console.log(`📍 Transcript URL found: ${transcriptUrl.substring(0, 100)}...`);
+      } else {
+        console.log('❌ No transcript URL found in selected track');
+      }
+      
+      return transcriptUrl || null;
+      
+    } catch (error) {
+      console.error('❌ Error extracting transcript URL:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch transcript data from transcript URL
+   * @param {string} url - Transcript URL
+   * @returns {Promise<string>} - Transcript XML data
+   */
+  async fetchTranscriptData(url) {
+    console.log(`📥 Fetching transcript data from: ${url.substring(0, 100)}...`);
+    
+    let lastError = null;
+    
+    for (let i = 0; i < this.corsProxies.length; i++) {
+      const proxy = this.corsProxies[i];
+      try {
+        console.log(`🔄 Trying proxy ${i + 1}/${this.corsProxies.length} for transcript...`);
+        
+        let proxyUrl;
+        if (proxy.includes('allorigins.win')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('codetabs.com')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else {
+          proxyUrl = proxy + encodeURIComponent(url);
+        }
+        
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json, text/xml, */*',
+          }
+        });
+        
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          let data;
+          
+          if (contentType.includes('application/json')) {
+            const jsonData = await response.json();
+            data = jsonData.contents || jsonData.body || jsonData.data || jsonData;
+          } else {
+            data = await response.text();
+          }
+          
+          if (typeof data === 'string' && (data.includes('<text') || data.includes('<?xml'))) {
+            console.log(`✅ Transcript data received (${data.length} characters)`);
+            return data;
+          } else {
+            throw new Error('Invalid transcript format');
+          }
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.warn(`❌ Proxy ${i + 1} failed for transcript:`, error.message);
+        lastError = error;
+        continue;
+      }
+    }
+    
+    throw new Error(`לא ניתן לטעון את נתוני התמלול. השגיאה: ${lastError?.message || 'לא ידוע'}`);
+  }
+
+  /**
+   * Parse transcript XML data
+   * @param {string} xml - Transcript XML
+   * @returns {Object} - Parsed transcript with words and timing
+   */
+  parseTranscript(xml) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, 'text/xml');
+      
+      // Check for parse errors
+      const parseError = doc.querySelector('parsererror');
+      if (parseError) {
+        throw new Error('שגיאה בפענוח XML');
+      }
+      
+      const textElements = doc.querySelectorAll('text');
+      console.log(`📝 Found ${textElements.length} text segments`);
+      
+      if (textElements.length === 0) {
+        throw new Error('לא נמצאו רכיבי טקסט בתמלול');
+      }
+      
+      const words = [];
+      let fullText = '';
+      let duration = 0;
+      
+      textElements.forEach((element, index) => {
+        const start = parseFloat(element.getAttribute('start')) || 0;
+        const dur = parseFloat(element.getAttribute('dur')) || 2;
+        let text = element.textContent || '';
+        
+        // Decode HTML entities (for extension environment)
+        if (typeof document !== 'undefined') {
+          const textarea = document.createElement('textarea');
+          textarea.innerHTML = text;
+          text = textarea.value.trim();
+        } else {
+          // Fallback for extension content script
+          text = text.replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .trim();
+        }
+        
+        if (text) {
+          // Split text into words for better granularity
+          const wordsInSegment = text.split(/\s+/).filter(word => word.length > 0);
+          const timePerWord = wordsInSegment.length > 0 ? dur / wordsInSegment.length : dur;
+          
+          wordsInSegment.forEach((word, wordIndex) => {
+            const wordStart = start + (wordIndex * timePerWord);
+            const wordEnd = wordStart + timePerWord;
+            
+            words.push({
+              word: word,
+              startTime: Math.round(wordStart * 100) / 100, // Round to 2 decimal places
+              endTime: Math.round(wordEnd * 100) / 100,
+              confidence: 0.9 // YouTube captions generally high confidence
+            });
+          });
+          
+          fullText += text + ' ';
+          duration = Math.max(duration, start + dur);
+        }
+      });
+      
+      console.log(`✅ Parsed ${words.length} words, duration: ${Math.round(duration)}s`);
+      
+      return {
+        words,
+        fullText: fullText.trim(),
+        duration: Math.round(duration)
+      };
+      
+    } catch (error) {
+      console.error('❌ Error parsing transcript:', error);
+      throw new Error(`שגיאה בעיבוד נתוני התמלול: ${error.message}`);
+    }
+  }
+
+  /**
+   * Generate demo transcript if real one fails
+   * @param {string} videoId - Video ID
+   * @param {string} language - Language code
+   * @returns {Object} - Demo transcript data
+   */
+  generateDemoTranscript(videoId, language = 'he') {
+    console.log(`🎭 Generating demo transcript for ${videoId} (${language})`);
+    
+    const demoTexts = {
+      'he': [
+        'שלום וברוכים הבאים לסרטון החדש שלנו',
+        'היום אנחנו נדבר על נושא מעניין במיוחד',
+        'זה נושא שמעניין הרבה אנשים בתחום',
+        'בואו נתחיל עם ההקדמה הבסיסית',
+        'כפי שאתם יכולים לראות כאן',
+        'זה דוגמה טובה למה שדיברנו עליו',
+        'אני מקווה שזה עוזר לכם להבין את הנושא',
+        'תודה לכם על הצפייה ונתראה בסרטון הבא'
+      ],
+      'en': [
+        'Hello and welcome to our new video',
+        'Today we are going to talk about a particularly interesting topic',
+        'This is a topic that interests many people in the field',
+        'Let\'s start with the basic introduction',
+        'As you can see here',
+        'This is a good example of what we talked about',
+        'I hope this helps you understand the topic',
+        'Thank you for watching and see you in the next video'
+      ]
+    };
+
+    const texts = demoTexts[language] || demoTexts['en'];
+    const words = [];
+    let currentTime = 0;
+    
+    texts.forEach((text) => {
+      const wordsInText = text.split(' ');
+      wordsInText.forEach((word) => {
+        words.push({
+          word: word,
+          startTime: Math.round(currentTime * 100) / 100,
+          endTime: Math.round((currentTime + 0.5) * 100) / 100,
+          confidence: 0.95
+        });
+        currentTime += 0.6;
+      });
+      currentTime += 1; // Pause between sentences
+    });
+
+    return {
+      success: true,
+      data: {
+        videoId,
+        language,
+        transcript: words,
+        fullText: texts.join(' '),
+        duration: Math.round(currentTime),
+        source: 'demo',
+        isDemoData: true
+      }
+    };
+  }
+}
+
+// Export for Chrome Extension
+if (typeof window !== 'undefined') {
+  window.YouTubeTranscriptService = YouTubeTranscriptService;
+}

@@ -8,10 +8,12 @@ import {
   MenuItem,
   Select,
   FormControl,
+  Tooltip,
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import TranslateIcon from '@mui/icons-material/Translate';
 import YouTubeIcon from '@mui/icons-material/YouTube';
+import LanguageIcon from '@mui/icons-material/Language';
 
 // Language options
 const languages = [
@@ -62,6 +64,34 @@ const MainNavbar = ({ language, onLanguageChange, onSettingsClick }) => {
     }
   };
 
+  // Website button tooltip text based on language
+  const getWebsiteTooltip = () => {
+    switch (language) {
+      case 'he':
+        return 'בקר באתר שלנו';
+      case 'uk':
+        return 'Відвідати наш сайт';
+      case 'ar':
+        return 'زيارة موقعنا';
+      case 'ru':
+        return 'Посетить наш сайт';
+      case 'fr':
+        return 'Visiter notre site';
+      case 'es':
+        return 'Visitar nuestro sitio';
+      case 'de':
+        return 'Besuchen Sie unsere Website';
+      case 'en':
+      default:
+        return 'Visit our website';
+    }
+  };
+
+  // Handle website button click
+  const handleWebsiteClick = () => {
+    window.open('https://youtubesmartchaptersai.pages.dev', '_blank');
+  };
+
   return (
     <AppBar position="static">
       <Toolbar>
@@ -92,6 +122,18 @@ const MainNavbar = ({ language, onLanguageChange, onSettingsClick }) => {
             </Select>
           </FormControl>
         </Box>
+        
+        {/* Website Button */}
+        <Tooltip title={getWebsiteTooltip()}>
+          <IconButton 
+            color="inherit" 
+            onClick={handleWebsiteClick}
+            aria-label="website"
+            sx={{ mr: 1 }}
+          >
+            <LanguageIcon />
+          </IconButton>
+        </Tooltip>
         
         {/* Settings Button */}
         <IconButton 

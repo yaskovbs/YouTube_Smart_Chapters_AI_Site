@@ -4,6 +4,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
+const { body, validationResult } = require('express-validator');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -43,18 +44,55 @@ const upload = multer({
 function extractYouTubeVideoId(url) {
   if (!url) return null;
   
+  console.log('Attempting to extract video ID from URL:', url);
+  
+  // Clean the URL first and extract using URL parsing
+  try {
+    const urlObj = new URL(url);
+    
+    // Handle youtube.com URLs
+    if (urlObj.hostname.includes('youtube.com')) {
+      const videoId = urlObj.searchParams.get('v');
+      if (videoId && videoId.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        console.log('Extracted video ID from youtube.com URL params:', videoId);
+        return videoId;
+      }
+    }
+    
+    // Handle youtu.be URLs (including with query parameters)
+    if (urlObj.hostname.includes('youtu.be')) {
+      const videoId = urlObj.pathname.replace('/', '');
+      if (videoId && videoId.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        console.log('Extracted video ID from youtu.be URL:', videoId);
+        return videoId;
+      }
+    }
+  } catch (urlError) {
+    console.log('URL parsing failed, trying regex fallback:', urlError.message);
+  }
+  
   // First try the standard YouTube URL validation
   if (ytdl.validateURL(url)) {
     try {
       const videoId = ytdl.getURLVideoID(url);
+      console.log('Extracted video ID using ytdl.getURLVideoID:', videoId);
       return videoId;
     } catch (e) {
-      console.log("Standard extraction failed:", e.message);
+      console.log("Standard ytdl extraction failed:", e.message);
     }
   }
   
   // If that fails, try regex patterns for different URL formats
   try {
+    // Enhanced regex for youtu.be URLs with parameters
+    const youtuBeRegex = /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})(?:\?.*)?/;
+    const youtuBeMatch = url.match(youtuBeRegex);
+    
+    if (youtuBeMatch && youtuBeMatch[1]) {
+      console.log('Extracted video ID from youtu.be regex:', youtuBeMatch[1]);
+      return youtuBeMatch[1];
+    }
+    
     // Handle standard YouTube URLs
     const standardRegex = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const standardMatch = url.match(standardRegex);
@@ -82,7 +120,7 @@ function extractYouTubeVideoId(url) {
       return shortMatch[1];
     }
     
-    // Special handling for youtu.be wildcard format
+    // Special handling for youtu.be wildcard format with query parameters
     if (url.includes('youtu.be/')) {
       const parts = url.split('youtu.be/');
       if (parts.length >= 2) {
@@ -95,11 +133,16 @@ function extractYouTubeVideoId(url) {
     }
     
     // Handle URLs with ID in path segments
-    const segments = new URL(url).pathname.split('/').filter(Boolean);
-    for (const segment of segments) {
-      if (segment.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(segment)) {
-        return segment;
+    try {
+      const segments = new URL(url).pathname.split('/').filter(Boolean);
+      for (const segment of segments) {
+        if (segment.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(segment)) {
+          console.log('Extracted video ID from URL path segments:', segment);
+          return segment;
+        }
       }
+    } catch (segmentError) {
+      // Ignore URL parsing errors for path segment extraction
     }
   } catch (e) {
     console.log("Regex extraction failed:", e.message);
@@ -129,15 +172,18 @@ exports.processVideoUrl = async (req, res) => {
     if (!videoId) {
       return res.status(400).json({
         success: false,
-        message: 'Could not extract video ID from the provided URL'
+        message: 'Could not extract video ID from the provided URL. Please check the URL format.'
       });
     }
     
     console.log(`Processing YouTube video ID: ${videoId} from URL: ${url}`);
 
-    // Try to get video info directly using the ID
+    // Create a clean URL for ytdl-core
+    const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+    // Try to get video info directly using the clean URL
     try {
-      const videoInfo = await ytdl.getInfo(videoId);
+      const videoInfo = await ytdl.getInfo(cleanUrl);
       const title = videoInfo.videoDetails.title;
       const duration = parseInt(videoInfo.videoDetails.lengthSeconds);
       
@@ -148,13 +194,13 @@ exports.processVideoUrl = async (req, res) => {
           videoId,
           title,
           duration,
-          url
+          url: cleanUrl // Return the clean URL for consistency
         }
       });
     } catch (infoError) {
-      console.error('Error getting video info with ID:', infoError);
+      console.error('Error getting video info with clean URL:', infoError);
       
-      // Fall back to using the URL if ID fails
+      // Fall back to using the original URL
       try {
         const videoInfo = await ytdl.getInfo(url);
         const title = videoInfo.videoDetails.title;
@@ -182,7 +228,7 @@ exports.processVideoUrl = async (req, res) => {
               videoId,
               title: `YouTube Video (${videoId})`,
               duration: 0, // Unknown duration
-              url,
+              url: cleanUrl,
               note: 'Basic info only due to YouTube API limitations'
             }
           });
@@ -200,6 +246,8 @@ exports.processVideoUrl = async (req, res) => {
       errorMessage = 'YouTube API change detected. Please try a different URL format or update ytdl-core.';
     } else if (error.message.includes('Video unavailable')) {
       errorMessage = 'The video is unavailable or private. Please check the URL and try again.';
+    } else if (error.message.includes('functions')) {
+      errorMessage = 'YouTube has updated their system. Try using the Chrome extension instead for better compatibility.';
     }
     
     return res.status(500).json({

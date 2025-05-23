@@ -41,17 +41,37 @@ chrome.runtime.onInstalled.addListener((details) => {
       language: 'he', // Default language set to Hebrew
       apiKeys: {
         openai: '',
-        google: ''
+        assemblyai: ''
       },
       preferences: {
-        apiProvider: 'openai', // Default API provider
+        apiProvider: 'assemblyai', // Default API provider (better transcription)
         autoSuggestChapters: true,
         showNotifications: true
       }
     });
   } else if (details.reason === "update") {
-    // Extension update
+    // Extension update - migrate from Google AI to AssemblyAI
     console.log(`YouTube Smart Chapters AI extension updated to version ${chrome.runtime.getManifest().version}`);
+    
+    // Update settings to use AssemblyAI instead of Google AI
+    chrome.storage.sync.get(['apiKeys', 'preferences'], (result) => {
+      const apiKeys = result.apiKeys || {};
+      const preferences = result.preferences || {};
+      
+      // If user had Google AI key, suggest they set up AssemblyAI
+      if (apiKeys.google && !apiKeys.assemblyai) {
+        console.log('Migrating from Google AI to AssemblyAI - user will need to set new API key');
+        delete apiKeys.google; // Remove old Google AI key
+      }
+      
+      // Update preferences to use AssemblyAI as default
+      preferences.apiProvider = 'assemblyai';
+      
+      chrome.storage.sync.set({
+        apiKeys,
+        preferences
+      });
+    });
   }
 });
 
@@ -224,22 +244,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * @returns {Promise} - Resolves with processing result
  */
 async function processVideoOnBackend(videoId, videoInfo) {
-  // This function would normally make API calls to the backend service
-  // For this implementation, we'll simulate the process
   const MAX_RETRIES = 3; // Maximum number of retries for network operations
   const RETRY_DELAY = 2000; // Delay between retries in milliseconds
 
   // Helper function to check server availability before making requests
   const checkServerAvailability = async (url) => {
     try {
+      console.log(`Checking server availability at: ${url}/health`);
+      
+      // Use a proper timeout with AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
       const response = await fetch(`${url}/health`, { 
-        method: 'GET', 
-        timeout: 5000,
-        headers: { 'Content-Type': 'application/json' }
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
       });
-      return response.ok;
+      
+      // Clear timeout
+      clearTimeout(timeoutId);
+      
+      // Check if response is ok and get status
+      const isAvailable = response.ok;
+      console.log(`Server availability check: ${isAvailable ? 'Available' : 'Unavailable'}, Status: ${response.status}`);
+      
+      return isAvailable;
     } catch (error) {
       console.warn(`Server availability check failed: ${error.message}`);
+      
+      // Log more details about the error to help debug
+      if (error.name === 'AbortError') {
+        console.warn('Server check timed out after 5 seconds');
+      } else if (error.name === 'TypeError') {
+        console.warn('Network error when checking server - server might be offline or URL is incorrect');
+      }
+      
       return false;
     }
   };
@@ -293,14 +333,14 @@ async function processVideoOnBackend(videoId, videoInfo) {
           throw new Error(videoData.message || 'Error processing video');
         }
         
-        // Generate transcription
+        // Generate transcription using AssemblyAI
         const transcriptionResponse = await fetch(`${backendUrl}/api/transcription/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             source: 'youtube',
             sourceId: videoId,
-            language: 'auto' // Auto-detect or use preference
+            language: 'he' // Default to Hebrew, can be changed based on preference
           })
         });
         
@@ -315,13 +355,14 @@ async function processVideoOnBackend(videoId, videoInfo) {
           throw new Error(transcriptionData.message || 'Error generating transcription');
         }
         
-        // Analyze content
+        // Analyze content with AI
         const analysisResponse = await fetch(`${backendUrl}/api/ai/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            transcriptionId: transcriptionData.data.transcriptionId,
-            language: 'auto' // Auto-detect or use preference
+            transcriptionId: transcriptionData.data.id,
+            language: 'he',
+            apiType: 'assemblyai' // Use AssemblyAI for basic chapters
           })
         });
         
@@ -336,13 +377,14 @@ async function processVideoOnBackend(videoId, videoInfo) {
           throw new Error(analysisData.message || 'Error analyzing content');
         }
         
-        // Generate chapters
+        // Generate chapters (may use OpenAI for enhancement if available)
         const chaptersResponse = await fetch(`${backendUrl}/api/ai/generate-chapters`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            analysisId: analysisData.data.analysisId,
-            language: 'auto' // Auto-detect or use preference
+            analysisId: analysisData.data.id,
+            language: 'he',
+            apiType: 'assemblyai' // Default to AssemblyAI chapters
           })
         });
         
@@ -357,25 +399,33 @@ async function processVideoOnBackend(videoId, videoInfo) {
           throw new Error(chaptersData.message || 'Error generating chapters');
         }
         
-        // Generate metadata
+        // Generate metadata (prefer OpenAI if available, fallback to AssemblyAI)
         const metadataResponse = await fetch(`${backendUrl}/api/ai/generate-metadata`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            analysisId: analysisData.data.analysisId,
-            language: 'auto' // Auto-detect or use preference
+            analysisId: analysisData.data.id,
+            language: 'he',
+            apiType: 'openai' // Prefer OpenAI for metadata if available
           })
         });
         
-        if (!metadataResponse.ok) {
-          const errorData = await metadataResponse.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to generate metadata');
-        }
-        
-        const metadataData = await metadataResponse.json();
-        
-        if (!metadataData.success) {
-          throw new Error(metadataData.message || 'Error generating metadata');
+        let metadataData;
+        if (metadataResponse.ok) {
+          metadataData = await metadataResponse.json();
+        } else {
+          // Fallback to simple metadata generation
+          metadataData = {
+            success: true,
+            data: {
+              metadata: {
+                title: videoInfo?.title || 'YouTube Video',
+                description: 'Generated chapters for this video.',
+                tags: [],
+                hashtags: []
+              }
+            }
+          };
         }
         
         // Return all results
@@ -383,7 +433,7 @@ async function processVideoOnBackend(videoId, videoInfo) {
           videoData: videoData.data,
           transcription: transcriptionData.data,
           analysis: analysisData.data,
-          chapters: chaptersData.data.chapters,
+          chapters: chaptersData.data.chapters || [],
           metadata: metadataData.data.metadata
         });
       } catch (error) {

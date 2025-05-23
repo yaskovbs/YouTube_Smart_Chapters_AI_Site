@@ -235,21 +235,37 @@ export const aiService = {
     }
   },
 
-// Save API key
+  // Save API key (supports 'openai' and 'assemblyai')
   saveApiKey: async (type, key) => {
     try {
+      // Validate API type
+      if (!['openai', 'assemblyai'].includes(type)) {
+        throw new Error('Invalid API type. Must be "openai" or "assemblyai"');
+      }
+
       // For testing without a server, save to Chrome storage instead
       // First try to use the Chrome extension API if available
       if (isExtensionContext()) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           chrome.storage.sync.get(['apiKeys'], (result) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            
             const apiKeys = result.apiKeys || {};
             apiKeys[type] = key;
             
             chrome.storage.sync.set({ apiKeys }, () => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              
+              const serviceName = type === 'openai' ? 'OpenAI' : 'AssemblyAI';
               resolve({
                 success: true,
-                message: `${type.charAt(0).toUpperCase() + type.slice(1)} API key saved successfully`,
+                message: `מפתח ${serviceName} נשמר בהצלחה`,
                 data: { hasKey: true }
               });
             });
@@ -277,13 +293,25 @@ export const aiService = {
   },
 };
 
-// Check if API key exists
+// Check if API key exists (supports 'openai' and 'assemblyai')
 export const checkApiKeys = async (type) => {
   try {
+    // Validate API type
+    if (!['openai', 'assemblyai'].includes(type)) {
+      console.warn('Invalid API type for checking:', type);
+      return false;
+    }
+
     // First try to check in Chrome storage if available
     if (isExtensionContext()) {
       return new Promise((resolve) => {
         chrome.storage.sync.get(['apiKeys'], (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('Chrome storage error:', chrome.runtime.lastError);
+            resolve(false);
+            return;
+          }
+          
           const apiKeys = result.apiKeys || {};
           resolve(!!apiKeys[type]);
         });
@@ -299,12 +327,54 @@ export const checkApiKeys = async (type) => {
   }
 };
 
+// Get cache statistics (for debugging)
+export const getCacheStats = async () => {
+  try {
+    const response = await api.get('/ai/cache/stats');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting cache stats:', error);
+    return null;
+  }
+};
+
+// Clear API keys from storage
+export const clearApiKeys = async () => {
+  try {
+    if (isExtensionContext()) {
+      return new Promise((resolve, reject) => {
+        chrome.storage.sync.remove(['apiKeys'], () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve({
+            success: true,
+            message: 'כל מפתחות ה-API נמחקו בהצלחה'
+          });
+        });
+      });
+    }
+    
+    // If not in extension context, we can't clear server-side keys easily
+    return {
+      success: false,
+      message: 'Cannot clear server-side API keys from client'
+    };
+  } catch (error) {
+    console.error('Error clearing API keys:', error);
+    throw error;
+  }
+};
+
 // Fix ESLint warning by assigning to a variable first
 const apiServices = {
   videoService,
   transcriptionService,
   aiService,
   checkApiKeys,
+  getCacheStats,
+  clearApiKeys,
 };
 
 export default apiServices;

@@ -45,9 +45,19 @@
             cursor: pointer;
             font-weight: bold;
             transition: background-color 0.2s;
+            width: 100%;
+            margin-bottom: 8px;
         }
         button:hover {
             background-color: #D81B60;
+        }
+        .button-row {
+            display: flex;
+            gap: 8px;
+        }
+        .button-row button {
+            flex: 1;
+            margin-bottom: 0;
         }
         .description {
             color: #666;
@@ -58,6 +68,62 @@
             background-color: #f5f5f5;
             padding: 12px;
             border-radius: 4px;
+        }
+        .api-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .file-upload {
+            display: none;
+            margin-top: 16px;
+            padding: 16px;
+            border: 2px dashed #E91E63;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .file-upload.active {
+            display: block;
+        }
+        .file-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .file-info {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .selected-file {
+            background-color: #e8f5e9;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background-color: #f0f0f0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 8px;
         }
     </style>
 </head>
@@ -73,45 +139,109 @@
         </header>
         
         <div class="description">
-            Generate AI-powered chapters, titles, descriptions, and tags for YouTube videos.
+            יצירת פרקים חכמים, כותרות, תיאורים ותגים לסרטוני YouTube באמצעות AI מתקדם ותמלילי YouTube.
         </div>
         
-        <button id="analyzeCurrentVideo">Analyze Current Video</button>
-        <button id="openSettings" style="background-color: #2196F3;">API Settings</button>
+        <button id="analyzeCurrentVideo">📺 נתח סרטון נוכחי</button>
+        <button id="uploadVideoFile" style="background-color: #FF5722;">📁 העלה קובץ וידאו</button>
+        
+        <div class="button-row">
+            <button id="openSettings" style="background-color: #2196F3;">⚙️ הגדרות</button>
+            <button id="openWebsite" style="background-color: #4CAF50;">🌐 אתר ראשי</button>
+        </div>
+
+        <!-- File Upload Section -->
+        <div id="fileUploadSection" class="file-upload">
+            <h3 style="margin: 0 0 12px 0; color: #E91E63;">העלאת קובץ וידאו</h3>
+            <input type="file" id="videoFileInput" class="file-input" accept="video/mp4,video/avi,video/mov,video/wmv,video/mkv">
+            <div class="file-info">
+                תומך ב: MP4, AVI, MOV, WMV, MKV<br>
+                גודל מקסימלי: 500MB (~60 דקות)
+            </div>
+            
+            <div id="selectedFileInfo" class="selected-file" style="display: none;">
+                <strong>נבחר:</strong> <span id="fileName"></span><br>
+                <strong>גודל:</strong> <span id="fileSize"></span>
+            </div>
+            
+            <div id="uploadProgress" style="display: none;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span>מעלה...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 8px;">
+                <button id="processUploadedFile" style="flex: 1; background-color: #4CAF50;" disabled>עבד קובץ</button>
+                <button id="cancelUpload" style="flex: 1; background-color: #9E9E9E;">ביטול</button>
+            </div>
+        </div>
         
         <div class="instructions">
-            To use:
+            <strong>איך להשתמש:</strong>
             <ol>
-                <li>Go to a YouTube video</li>
-                <li>Click "Analyze Current Video"</li>
-                <li>Wait for AI generation to complete</li>
-                <li>Copy and use the generated content</li>
+                <li><strong>סרטון נוכחי:</strong> עבור לדף סרטון YouTube</li>
+                <li><strong>העלאת קובץ:</strong> השתמש באתר הראשי</li>
+                <li>חכה לסיום יצירת הפרקים</li>
+                <li>העתק והשתמש בתוכן שנוצר</li>
             </ol>
+            <div style="background-color: #e8f5e9; padding: 8px; border-radius: 4px; margin-top: 8px; font-size: 12px;">
+                <strong>חדש:</strong> התוסף עכשיו עובד עם תמלילי YouTube בלבד - ללא צורך בשרת!
+            </div>
         </div>
 
         <!-- Settings Panel (hidden by default) -->
         <div id="settingsPanel" style="display: none; border: 1px solid #ccc; border-radius: 4px; padding: 16px; margin-top: 16px;">
-            <h2 style="font-size: 16px; margin-top: 0;">API Settings</h2>
+            <h2 style="font-size: 16px; margin-top: 0;">הגדרות התוסף</h2>
             
             <div style="margin-bottom: 16px;">
-                <label for="openaiKey" style="display: block; margin-bottom: 4px; font-weight: bold;">OpenAI API Key:</label>
-                <input type="password" id="openaiKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <label for="languageSelect" style="display: block; margin-bottom: 4px; font-weight: bold;">🌍 שפת תמלול:</label>
+                <select id="languageSelect">
+                    <option value="he">עברית (Hebrew)</option>
+                    <option value="en">English</option>
+                    <option value="ar">العربية (Arabic)</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="es">Español</option>
+                    <option value="ru">Русский</option>
+                    <option value="uk">Українська</option>
+                    <option value="it">Italiano</option>
+                    <option value="pt">Português</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="zh">中文</option>
+                </select>
+                <div class="api-info">שפה למציאת תמלילים ב-YouTube. השפה שתיבחר תישמר לשימושים הבאים.</div>
+            </div>
+            
+            <div style="margin-bottom: 16px;">
+                <label for="openaiKey" style="display: block; margin-bottom: 4px; font-weight: bold;">מפתח OpenAI API (אופציונלי):</label>
+                <input type="password" id="openaiKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="sk-...">
+                <div class="api-info">לניתוח תוכן ויצירת פרקים עם AI מתקדם</div>
                 <label style="display: flex; align-items: center; margin-top: 4px;">
-                    <input type="checkbox" id="showOpenaiKey"> Show Key
+                    <input type="checkbox" id="showOpenaiKey"> הצג מפתח
                 </label>
             </div>
             
             <div style="margin-bottom: 16px;">
-                <label for="googleKey" style="display: block; margin-bottom: 4px; font-weight: bold;">Google AI API Key:</label>
-                <input type="password" id="googleKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <label for="assemblyaiKey" style="display: block; margin-bottom: 4px; font-weight: bold;">מפתח AssemblyAI API (אופציונלי):</label>
+                <input type="password" id="assemblyaiKey" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="מפתח AssemblyAI שלך">
+                <div class="api-info">לתמלול מדויק עם פרקים אוטומטיים</div>
                 <label style="display: flex; align-items: center; margin-top: 4px;">
-                    <input type="checkbox" id="showGoogleKey"> Show Key
+                    <input type="checkbox" id="showAssemblyaiKey"> הצג מפתח
                 </label>
             </div>
             
-            <div style="display: flex; justify-content: space-between;">
-                <button id="saveKeys" style="background-color: #4CAF50;">Save Keys</button>
-                <button id="closeSettings" style="background-color: #9E9E9E;">Close</button>
+            <div style="background-color: #e8f5e9; padding: 8px; border-radius: 4px; margin-bottom: 16px; font-size: 12px;">
+                <strong>הערה:</strong> התוסף עובד עם תמלילי YouTube ללא מפתחות API. המפתחות נחוצים רק לתכונות AI מתקדמות באתר הראשי.
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; gap: 8px;">
+                <button id="saveSettings" style="background-color: #4CAF50; flex: 1;">שמור הגדרות</button>
+                <button id="closeSettings" style="background-color: #9E9E9E; flex: 1;">סגור</button>
             </div>
             
             <div id="settingsMessage" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;"></div>
@@ -121,7 +251,10 @@
     <!-- Error container for displaying errors -->
     <div id="extension-error" style="display: none; background-color: #ffebee; color: #d32f2f; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 14px;"></div>
     
-    <!-- Load error handlers first -->
+    <!-- Load YouTube Transcript Service first -->
+    <script src="youtubeTranscriptService.js"></script>
+    
+    <!-- Load error handlers -->
     <script src="errorHandlers.js"></script>
     
     <!-- Then load our vanilla JS handlers -->

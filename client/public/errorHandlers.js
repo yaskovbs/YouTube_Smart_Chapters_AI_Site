@@ -18,55 +18,72 @@ function safeConsoleLog(level, ...args) {
 // Function to check if icon exists
 function checkIconExists() {
   try {
+    // Check if we're in a valid extension context
+    if (typeof chrome === 'undefined' || !chrome.runtime) {
+      safeConsoleLog('warn', 'Not in extension context, skipping icon check');
+      return;
+    }
+    
+    // Create image element for checking
     const img = new Image();
+    
+    // Set up onload callback first
     img.onload = function() {
-      safeConsoleLog('log', 'Icon loaded successfully');
+      safeConsoleLog('log', 'Icon loaded successfully: ' + img.src);
     };
+    
+    // Set up onerror callback to handle fallback
     img.onerror = function() {
-      // Use placeholder icon if the main icon can't be loaded
       safeConsoleLog('warn', 'Using placeholder icon instead.');
-      // Try loading the placeholder icon
-      if (typeof chrome !== 'undefined' && chrome.runtime) {
-        try {
-          img.src = chrome.runtime.getURL('icons/placeholder-icon.svg');
-          console.log('Attempting to load placeholder icon');
-        } catch (e) {
-          safeConsoleLog('error', 'Error loading placeholder icon:', e);
-        }
+      
+      try {
+        // Get proper URL for placeholder
+        const placeholderUrl = chrome.runtime.getURL('icons/placeholder-icon.svg');
+        safeConsoleLog('log', 'Loading placeholder from: ' + placeholderUrl);
+        
+        // Create new image for placeholder (the current one already failed)
+        const placeholderImg = new Image();
+        
+        placeholderImg.onload = function() {
+          safeConsoleLog('log', 'Placeholder icon loaded successfully');
+          
+          // You might add the icon to the DOM here if needed
+          // For example: document.getElementById('extension-icon').src = this.src;
+        };
+        
+        placeholderImg.onerror = function() {
+          safeConsoleLog('error', 'Failed to load placeholder icon');
+          
+          // Try direct path as final fallback
+          try {
+            const directPathImg = new Image();
+            directPathImg.onload = function() {
+              safeConsoleLog('log', 'Fallback direct path icon loaded successfully');
+            };
+            directPathImg.src = 'icons/placeholder-icon.svg';
+          } catch (finalError) {
+            safeConsoleLog('error', 'All icon loading attempts failed');
+          }
+        };
+        
+        // Set source for placeholder image with a timestamp to avoid cache issues
+        placeholderImg.src = placeholderUrl + '?t=' + Date.now();
+      } catch (e) {
+        safeConsoleLog('error', 'Error loading placeholder icon:', e);
       }
     };
     
-  // First verify that icon files exist before trying to load them
-  const verifyAndLoadIcon = async () => {
-    // Try to load main icon first
     try {
-      if (typeof chrome !== 'undefined' && chrome.runtime) {
-        // Check if icon48.png exists by attempting to fetch it first
-        const iconPath = 'icons/icon48.png';
-        const iconUrl = chrome.runtime.getURL(iconPath);
-        
-        // Log the attempt
-        safeConsoleLog('log', 'Attempting to load icon from: ' + iconUrl);
-        
-        // Set the image source
-        img.src = iconUrl;
-      } else {
-        // Not in extension context, use placeholder directly
-        img.src = 'icons/placeholder-icon.svg';
-      }
+      // Get proper URL for main icon
+      const iconUrl = chrome.runtime.getURL('icons/icon48.svg');
+      safeConsoleLog('log', 'Attempting to load icon from: ' + iconUrl);
+      
+      // Set source to trigger load attempt
+      img.src = iconUrl;
     } catch (e) {
       safeConsoleLog('error', 'Error getting extension URL:', e);
-      // Fallback to placeholder on error
-      try {
-        img.src = chrome.runtime.getURL('icons/placeholder-icon.svg');
-      } catch (innerErr) {
-        safeConsoleLog('error', 'Failed to load both main icon and placeholder:', innerErr);
-      }
+      // Don't try to load placeholder here - the onerror handler will do it
     }
-  };
-  
-  // Execute the verification and loading
-  verifyAndLoadIcon();
   } catch (e) {
     safeConsoleLog('error', 'Error checking icon:', e);
   }

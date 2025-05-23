@@ -26,7 +26,7 @@ function loadApiKeys() {
   try {
     console.log("Loading API keys...");
     const openaiKeyInput = document.getElementById('openaiKey');
-    const googleKeyInput = document.getElementById('googleKey');
+    const assemblyaiKeyInput = document.getElementById('assemblyaiKey');
     
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.sync.get(['apiKeys'], function(result) {
@@ -34,8 +34,8 @@ function loadApiKeys() {
         if (apiKeys.openai && openaiKeyInput) {
           openaiKeyInput.value = apiKeys.openai;
         }
-        if (apiKeys.google && googleKeyInput) {
-          googleKeyInput.value = apiKeys.google;
+        if (apiKeys.assemblyai && assemblyaiKeyInput) {
+          assemblyaiKeyInput.value = apiKeys.assemblyai;
         }
       });
     }
@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const apiKeys = result.apiKeys || {};
         const settingsPanel = document.getElementById('settingsPanel');
         // If no API keys are set, automatically open the settings panel
-        if ((!apiKeys.openai && !apiKeys.google) && settingsPanel) {
+        if ((!apiKeys.openai && !apiKeys.assemblyai) && settingsPanel) {
           settingsPanel.style.display = 'block';
         }
       });

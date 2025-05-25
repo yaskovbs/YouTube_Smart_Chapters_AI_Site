@@ -382,156 +382,136 @@ ${JSON.stringify(analysis)}
   }
 
   /**
-   * Basic chapter generation without AI (fallback) - IMPROVED VERSION
-   * Now uses actual transcript timing and natural breaks instead of simple division
+   * Basic chapter generation without AI (fallback) - FIXED VERSION
+   * Creates intelligent chapters based on video duration with STRICT rules for short videos
    * @param {Array} transcript - Transcript with timestamps
    * @param {string} language - Language code
-   * @returns {Array} - Smart chapters based on transcript breaks
+   * @returns {Array} - Smart chapters based on duration and content
    */
   generateBasicChapters(transcript, language = 'he') {
     if (!transcript || transcript.length === 0) {
+      console.log('🚫 generateBasicChapters: Empty transcript');
       return [];
     }
 
     const totalDuration = Math.max(...transcript.map(word => word.endTime));
+    const isHebrew = language === 'he';
     
-    // Find natural break points in the transcript
-    const naturalBreaks = this.findNaturalBreaks(transcript);
+    console.log('🎬 generateBasicChapters DEBUG:');
+    console.log('   📊 Total Duration:', totalDuration + ' seconds');
+    console.log('   🗣️ Language:', language);
+    console.log('   📝 Transcript length:', transcript.length + ' words');
     
-    // If we have too few natural breaks, add some based on timing
-    if (naturalBreaks.length < 3) {
-      const timeBasedBreaks = this.generateTimeBasedBreaks(totalDuration, 4);
-      naturalBreaks.push(...timeBasedBreaks);
-      naturalBreaks.sort((a, b) => a.time - b.time);
+    // STRICT chapter rules - extremely conservative for quality
+    let targetChapterCount = 1;
+    let minChapterLength = 60;
+    
+    // For videos under 2 minutes - ALWAYS single chapter
+    if (totalDuration <= 120) {
+      console.log('   ⚡ Short video (<= 2 minutes) - SINGLE CHAPTER ONLY');
+      targetChapterCount = 1;
+      minChapterLength = totalDuration;
+    } else if (totalDuration <= 240) {
+      // 2-4 minutes: Max 2 chapters
+      console.log('   📝 Medium video (2-4 minutes) - Max 2 chapters');
+      targetChapterCount = 2;
+      minChapterLength = 90;
+    } else if (totalDuration <= 480) {
+      // 4-8 minutes: Max 3 chapters
+      console.log('   📚 Long video (4-8 minutes) - Max 3 chapters');
+      targetChapterCount = 3;
+      minChapterLength = 120;
+    } else if (totalDuration <= 720) {
+      // 8-12 minutes: Max 4 chapters
+      console.log('   📖 Very long video (8-12 minutes) - Max 4 chapters');
+      targetChapterCount = 4;
+      minChapterLength = 150;
+    } else {
+      // 12+ minutes: Max 5 chapters
+      console.log('   📗 Extra long video (12+ minutes) - Max 5 chapters');
+      targetChapterCount = 5;
+      minChapterLength = 180;
     }
 
-    // Limit to reasonable number of chapters
-    const maxChapters = Math.min(8, naturalBreaks.length + 1);
-    const selectedBreaks = naturalBreaks.slice(0, maxChapters - 1);
+    console.log('   🎯 Target Chapter Count:', targetChapterCount);
+    console.log('   ⏱️ Min Chapter Length:', minChapterLength + ' seconds');
 
     const chapterTitles = {
-      'he': [
-        'פתיחה וברכות',
-        'הצגת הנושא', 
-        'תוכן מרכזי',
-        'פיתוח הנושא',
-        'דוגמאות ופירוט',
-        'הסבר מתקדם', 
-        'דיון והרחבה',
-        'סיכום וסיום'
-      ],
-      'en': [
-        'Opening and Greetings',
-        'Topic Introduction',
-        'Main Content', 
-        'Topic Development',
-        'Examples and Details',
-        'Advanced Explanation',
-        'Discussion and Expansion',
-        'Summary and Conclusion'
-      ]
+      'he': ['תוכן הסרטון', 'התחלה', 'המשך', 'סיכום', 'סיום'],
+      'en': ['Video Content', 'Introduction', 'Main Content', 'Summary', 'Conclusion']
     };
 
     const titles = chapterTitles[language] || chapterTitles['en'];
     const chapters = [];
 
-    // Add first chapter (always starts at 0:00)
-    let chapterStart = 0;
-    
-    selectedBreaks.forEach((breakPoint, index) => {
-      const chapterEnd = Math.floor(breakPoint.time);
-      
+    if (targetChapterCount === 1) {
+      // Single chapter for short videos
+      console.log('   ✅ Creating SINGLE chapter for entire video');
       chapters.push({
-        id: index + 1,
-        title: titles[index] || `${language === 'he' ? 'פרק' : 'Chapter'} ${index + 1}`,
-        startTime: Math.floor(chapterStart),
-        endTime: chapterEnd,
-        formattedStartTime: this.formatTimestamp(chapterStart),
-        formattedEndTime: this.formatTimestamp(chapterEnd),
-        description: breakPoint.reason || `${language === 'he' ? 'תוכן של פרק' : 'Chapter content'} ${index + 1}`
-      });
-      
-      chapterStart = chapterEnd;
-    });
-
-    // Add final chapter
-    if (chapterStart < totalDuration) {
-      chapters.push({
-        id: chapters.length + 1,
-        title: titles[chapters.length] || `${language === 'he' ? 'פרק' : 'Chapter'} ${chapters.length + 1}`,
-        startTime: Math.floor(chapterStart),
+        id: 1,
+        title: titles[0],
+        startTime: 0,
         endTime: Math.floor(totalDuration),
-        formattedStartTime: this.formatTimestamp(chapterStart),
+        formattedStartTime: this.formatTimestamp(0),
         formattedEndTime: this.formatTimestamp(totalDuration),
-        description: `${language === 'he' ? 'תוכן של פרק' : 'Chapter content'} ${chapters.length + 1}`
+        description: isHebrew ? 'כל התוכן של הסרטון' : 'Complete video content'
       });
+    } else {
+      // Multiple chapters for longer videos
+      console.log('   📋 Creating', targetChapterCount, 'chapters for longer video');
+      
+      const chapterDuration = totalDuration / targetChapterCount;
+      console.log('   📏 Chapter duration:', chapterDuration + ' seconds');
+      
+      for (let i = 0; i < targetChapterCount; i++) {
+        const startTime = Math.floor(i * chapterDuration);
+        // FIX: Ensure end time doesn't exceed video duration
+        const calculatedEndTime = Math.floor((i + 1) * chapterDuration);
+        const endTime = i === targetChapterCount - 1 ? 
+          Math.floor(totalDuration) : 
+          Math.min(calculatedEndTime, Math.floor(totalDuration));
+        
+        console.log(`   ⏰ Chapter ${i + 1}: ${startTime}s - ${endTime}s`);
+        
+        // Skip chapters that start beyond video duration
+        if (startTime >= Math.floor(totalDuration)) {
+          console.log(`   ⚠️ Skipping chapter ${i + 1} - starts beyond video duration`);
+          break;
+        }
+        
+        chapters.push({
+          id: i + 1,
+          title: titles[i] || `${isHebrew ? 'פרק' : 'Chapter'} ${i + 1}`,
+          startTime: startTime,
+          endTime: endTime,
+          formattedStartTime: this.formatTimestamp(startTime),
+          formattedEndTime: this.formatTimestamp(endTime),
+          description: `${isHebrew ? 'תוכן פרק' : 'Chapter content'} ${i + 1}`
+        });
+      }
     }
+
+    console.log('   ✅ Generated', chapters.length, 'chapters');
+    chapters.forEach((chapter, index) => {
+      console.log(`   📌 Chapter ${index + 1}: "${chapter.title}" (${chapter.formattedStartTime} - ${chapter.formattedEndTime})`);
+    });
 
     return chapters;
   }
 
   /**
-   * Find natural break points in transcript based on pauses and content
+   * Find natural break points in transcript - DISABLED FOR NOW
    * @param {Array} transcript - Transcript words with timestamps
-   * @returns {Array} - Natural break points
+   * @returns {Array} - Empty array (disabled)
    */
   findNaturalBreaks(transcript) {
-    const breaks = [];
-    const minChapterLength = 60; // Minimum 60 seconds between chapters
-    
-    for (let i = 1; i < transcript.length; i++) {
-      const currentWord = transcript[i];
-      const previousWord = transcript[i - 1];
-      
-      // Calculate pause between words
-      const pause = currentWord.startTime - previousWord.endTime;
-      
-      // Skip if too early for next chapter
-      if (currentWord.startTime < breaks.length * minChapterLength + minChapterLength) {
-        continue;
-      }
-      
-      // Look for significant pauses (2+ seconds)
-      if (pause >= 2.0) {
-        breaks.push({
-          time: currentWord.startTime,
-          reason: 'הפסקה בדיבור',
-          confidence: Math.min(pause / 5.0, 1.0) // Higher confidence for longer pauses
-        });
-        continue;
-      }
-      
-      // Look for sentence endings followed by new topics
-      if (previousWord.word.includes('.') || previousWord.word.includes('!') || previousWord.word.includes('?')) {
-        // Check if next words suggest topic change
-        const nextFewWords = transcript.slice(i, i + 3).map(w => w.word.toLowerCase()).join(' ');
-        
-        const topicChangeWords = {
-          'he': ['עכשיו', 'הבא', 'נמשיך', 'נעבור', 'אחר כך', 'בנוסף', 'כמו כן', 'וגם'],
-          'en': ['now', 'next', 'then', 'also', 'furthermore', 'additionally', 'moreover', 'so']
-        };
-        
-        const words = topicChangeWords['he'].concat(topicChangeWords['en']);
-        
-        if (words.some(word => nextFewWords.includes(word))) {
-          breaks.push({
-            time: currentWord.startTime,
-            reason: 'מעבר נושא',
-            confidence: 0.7
-          });
-        }
-      }
-    }
-    
-    // Sort by confidence and time, keep best ones
-    return breaks
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, 6) // Max 6 natural breaks
-      .sort((a, b) => a.time - b.time);
+    // DISABLED - causing too many chapters
+    console.log('🚫 findNaturalBreaks: DISABLED to prevent too many chapters');
+    return [];
   }
 
   /**
-   * Generate time-based breaks as fallback
+   * Generate time-based breaks as fallback - SIMPLIFIED
    * @param {number} totalDuration - Total duration in seconds
    * @param {number} count - Number of breaks needed
    * @returns {Array} - Time-based break points

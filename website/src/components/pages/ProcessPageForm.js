@@ -167,12 +167,21 @@ const ProcessPageForm = ({
                   disabled={isProcessing}
                 />
                 <small style={{ color: '#666', fontSize: '0.9rem' }}>
-                  גודל מקסימלי: 25MB. פורמטים נתמכים: MP4, AVI, MOV, MP3, WAV
+                  גודל מקסימלי: 1GB. פורמטים נתמכים: MP4, AVI, MOV, MP3, WAV
                 </small>
                 {selectedFile && (
                   <div style={{ marginTop: '8px' }}>
                     <small style={{ color: '#4CAF50' }}>
-                      ✓ {selectedFile.name} ({Math.round(selectedFile.size / 1024)} KB)
+                      ✓ {selectedFile.name} ({(() => {
+                        const bytes = selectedFile.size;
+                        if (bytes === 0) return '0 Bytes';
+                        
+                        const k = 1024;
+                        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                        const i = Math.floor(Math.log(bytes) / Math.log(k));
+                        
+                        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                      })()})
                     </small>
                   </div>
                 )}

@@ -58,12 +58,14 @@ const useProcessPage = () => {
       return;
     }
 
-    // Check file size (25MB limit for Whisper)
-    const maxSize = 25 * 1024 * 1024; // 25MB
+    // Check file size (1GB limit)
+    const maxSize = 1 * 1024 * 1024 * 1024; // 1GB
     if (file.size > maxSize) {
-      setError('קובץ גדול מדי. גודל מקסימלי: 25MB');
+      setError('קובץ גדול מדי. גודל מקסימלי: 1GB');
       return;
     }
+    
+    console.log(`📁 File selected: ${file.name}, Size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
     setSelectedFile(file);
   };

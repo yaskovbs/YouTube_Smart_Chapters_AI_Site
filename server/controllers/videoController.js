@@ -24,14 +24,20 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
+  limits: { 
+    fileSize: 1024 * 1024 * 1024, // 1GB limit (1024MB)
+    fieldSize: 1024 * 1024 * 1024, // 1GB for field data
+    fields: 50, // Maximum number of non-file fields
+    files: 1, // Maximum number of file fields
+    parts: 1000 // Maximum number of parts
+  },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv'];
+    const allowedTypes = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.mp3', '.wav', '.m4a'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only video files are allowed.'));
+      cb(new Error('סוג קובץ לא נתמך. מותרים רק קבצי וידאו ואודיו.'));
     }
   }
 }).single('video');

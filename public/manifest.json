@@ -1,0 +1,18 @@
+{
+  "short_name": "YouTube Smart Chapters AI",
+  "name": "YouTube Smart Chapters AI - Generate AI-Powered Video Chapters",
+  "description": "Transform YouTube videos into smart chapters with AI-powered transcription, content analysis, and SEO-optimized metadata generation.",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#E91E63",
+  "background_color": "#ffffff",
+  "categories": ["productivity", "video", "ai", "tools"],
+  "lang": "en"
+}

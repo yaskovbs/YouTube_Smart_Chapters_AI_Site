@@ -328,6 +328,22 @@ ${JSON.stringify(analysis)}
       throw new Error('מפתח OpenAI נדרש לתמלול עם Whisper');
     }
 
+    // Check file size limit (OpenAI Whisper limit is 25MB)
+    const maxSizeBytes = 25 * 1024 * 1024; // 25MB in bytes
+    const fileSizeMB = (audioFile.size / (1024 * 1024)).toFixed(2);
+    
+    console.log(`📁 File size: ${fileSizeMB}MB (limit: 25MB)`);
+    
+    if (audioFile.size > maxSizeBytes) {
+      throw new Error(`קובץ האודיו גדול מדי: ${fileSizeMB}MB. הגבלת OpenAI Whisper היא 25MB. אנא דחוס את הקובץ או השתמש בקובץ קטן יותר.`);
+    }
+
+    // Check file type
+    const allowedTypes = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'video/mp4', 'video/webm'];
+    if (!allowedTypes.includes(audioFile.type)) {
+      console.warn(`⚠️ File type ${audioFile.type} might not be supported. Proceeding anyway...`);
+    }
+
     const formData = new FormData();
     formData.append('file', audioFile);
     formData.append('model', 'whisper-1');
@@ -336,6 +352,8 @@ ${JSON.stringify(analysis)}
     formData.append('timestamp_granularities[]', 'word');
 
     try {
+      console.log(`🎤 Starting Whisper transcription for ${fileSizeMB}MB file...`);
+      
       const response = await fetch(`${this.openAiBaseUrl}/audio/transcriptions`, {
         method: 'POST',
         headers: {
@@ -345,11 +363,32 @@ ${JSON.stringify(analysis)}
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'שגיאה בתמלול עם Whisper');
+        const errorText = await response.text();
+        let errorMessage = 'שגיאה בתמלול עם Whisper';
+        
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.error?.message || errorMessage;
+        } catch (parseError) {
+          console.error('Failed to parse error response:', errorText);
+        }
+
+        // Handle specific errors
+        if (response.status === 413) {
+          throw new Error(`קובץ גדול מדי (${fileSizeMB}MB). אנא השתמש בקובץ קטן מ-25MB.`);
+        } else if (response.status === 400) {
+          throw new Error(`פורמט קובץ לא נתמך או קובץ פגום. אנא בדוק שהקובץ תקין.`);
+        } else if (response.status === 401) {
+          throw new Error('מפתח OpenAI לא חוקי. אנא בדוק את המפתח בהגדרות.');
+        } else if (response.status === 429) {
+          throw new Error('חרגת ממכסת השימוש ב-OpenAI. אנא נסה שוב מאוחר יותר.');
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      console.log(`✅ Whisper transcription completed successfully`);
       
       // Process Whisper response to match our format
       const words = [];
@@ -377,6 +416,12 @@ ${JSON.stringify(analysis)}
 
     } catch (error) {
       console.error('Whisper transcription error:', error);
+      
+      // Provide helpful error messages
+      if (error.message.includes('fetch')) {
+        throw new Error('שגיאת רשת: לא ניתן להתחבר לשרתי OpenAI. בדוק את החיבור לאינטרנט.');
+      }
+      
       throw error;
     }
   }

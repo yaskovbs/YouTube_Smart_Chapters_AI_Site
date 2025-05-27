@@ -1,17 +1,19 @@
 /**
  * YouTube Transcript Service - extracts captions directly from YouTube
  * Works without server or FFmpeg - completely client-side
+ * Updated with better CORS proxies and error handling
  */
 
 class YouTubeTranscriptService {
   constructor() {
     this.corsProxies = [
-      // Updated working CORS proxies
-      'https://api.allorigins.win/get?url=',
+      // Updated working CORS proxies - prioritizing more reliable ones
       'https://corsproxy.io/?',
-      'https://cors.bridged.cc/',
-      'https://yacdn.org/proxy/',
+      'https://api.allorigins.win/get?url=',
+      'https://thingproxy.freeboard.io/fetch/',
       'https://api.codetabs.com/v1/proxy?quest=',
+      'https://crossorigin.me/',
+      'https://cors-anywhere.herokuapp.com/',
     ];
   }
 
@@ -115,6 +117,9 @@ class YouTubeTranscriptService {
         suggestion = 'בדוק את חיבור האינטרנט שלך ונסה שוב';
       } else if (error.message.includes('תמלילים')) {
         suggestion = 'נסה סרטון אחר שיש לו תמלילים או כתוביות';
+      } else if (error.message.includes('proxy')) {
+        errorMessage = 'כל שרתי ה-proxy נכשלו - בעיית רשת';
+        suggestion = 'נסה שוב מאוחר יותר או בדוק חיבור האינטרנט';
       }
       
       return {
@@ -146,18 +151,27 @@ class YouTubeTranscriptService {
           proxyUrl = proxy + encodeURIComponent(url);
         } else if (proxy.includes('codetabs.com')) {
           proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('thingproxy.freeboard.io')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('crossorigin.me')) {
+          proxyUrl = proxy + encodeURIComponent(url);
         } else {
           proxyUrl = proxy + encodeURIComponent(url);
         }
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         
         const response = await fetch(proxyUrl, {
           method: 'GET',
           headers: {
             'Accept': 'application/json, text/html, */*',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
           },
-          timeout: 10000
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (response.ok) {
           const contentType = response.headers.get('content-type') || '';
@@ -165,23 +179,28 @@ class YouTubeTranscriptService {
           
           if (contentType.includes('application/json')) {
             const jsonData = await response.json();
-            data = jsonData.contents || jsonData.body || jsonData.data || jsonData;
+            data = jsonData.contents || jsonData.body || jsonData.data || jsonData.response || jsonData;
           } else {
             data = await response.text();
           }
           
-          if (typeof data === 'string' && data.length > 1000 && data.includes('youtube')) {
-            console.log(`✅ Proxy ${i + 1} succeeded`);
+          if (typeof data === 'string' && data.length > 1000 && (data.includes('youtube') || data.includes('ytInitialData'))) {
+            console.log(`✅ Proxy ${i + 1} succeeded (${data.length} chars)`);
             return data;
           } else {
-            throw new Error('Invalid response format');
+            throw new Error('Invalid response format or too short');
           }
         } else {
-          throw new Error(`HTTP ${response.status}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       } catch (error) {
         console.warn(`❌ Proxy ${i + 1} failed:`, error.message);
         lastError = error;
+        
+        // Add small delay between proxy attempts
+        if (i < this.corsProxies.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
         continue;
       }
     }
@@ -197,44 +216,50 @@ class YouTubeTranscriptService {
    */
   extractTranscriptUrl(html, languageCode) {
     try {
-      // Multiple patterns to find captions data
+      // Multiple patterns to find captions data - more comprehensive search
       const captionPatterns = [
-        /"captions":.*?"playerCaptionsTracklistRenderer":\{"captionTracks":\[(.*?)\]/,
-        /"captionTracks":\[(.*?)\]/,
-        /playerCaptionsTracklistRenderer.*?captionTracks.*?\[(.*?)\]/
+        /"captions":.*?"playerCaptionsTracklistRenderer":\{"captionTracks":\[(.*?)\]/s,
+        /"captionTracks":\[(.*?)\]/s,
+        /playerCaptionsTracklistRenderer.*?captionTracks.*?\[(.*?)\]/s,
+        /"playerCaptionsRenderer".*?"captionTracks":\[(.*?)\]/s
       ];
       
       let match = null;
+      let captionsData = null;
+      
       for (const pattern of captionPatterns) {
         match = html.match(pattern);
-        if (match) break;
+        if (match && match[1]) {
+          captionsData = match[1];
+          console.log(`📋 Found captions data with pattern ${captionPatterns.indexOf(pattern) + 1}`);
+          break;
+        }
       }
       
-      if (!match) {
+      if (!captionsData) {
         console.log('❌ No captions data found in page');
+        console.log('🔍 Page contains ytInitialData:', html.includes('ytInitialData'));
+        console.log('🔍 Page contains playerResponse:', html.includes('playerResponse'));
         return null;
       }
       
-      const captionsData = match[1];
       console.log(`📋 Found captions data: ${captionsData.substring(0, 200)}...`);
       
       let tracks;
       try {
-        tracks = JSON.parse(`[${captionsData}]`);
-      } catch (parseError) {
-        // Try to fix common JSON issues
-        const fixedData = captionsData
+        // Clean up the JSON before parsing
+        let cleanData = captionsData
           .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":') // Add quotes to property names
           .replace(/:\s*'([^']*?)'/g, ':"$1"') // Replace single quotes with double quotes
-          .replace(/,\s*}/g, '}') // Remove trailing commas
-          .replace(/,\s*]/g, ']');
+          .replace(/,\s*}/g, '}') // Remove trailing commas from objects
+          .replace(/,\s*]/g, ']') // Remove trailing commas from arrays
+          .replace(/\\\//g, '/'); // Fix escaped slashes
         
-        try {
-          tracks = JSON.parse(`[${fixedData}]`);
-        } catch (secondParseError) {
-          console.error('❌ Failed to parse captions JSON:', secondParseError);
-          return null;
-        }
+        tracks = JSON.parse(`[${cleanData}]`);
+      } catch (parseError) {
+        console.error('❌ Failed to parse captions JSON:', parseError);
+        console.log('📄 Raw captions data:', captionsData.substring(0, 500));
+        return null;
       }
       
       if (!Array.isArray(tracks) || tracks.length === 0) {
@@ -244,7 +269,7 @@ class YouTubeTranscriptService {
       
       console.log(`📺 Found ${tracks.length} caption tracks`);
       tracks.forEach((track, index) => {
-        console.log(`  Track ${index + 1}: ${track.languageCode || 'unknown'} (${track.kind || 'manual'})`);
+        console.log(`  Track ${index + 1}: ${track.languageCode || 'unknown'} (${track.kind || 'manual'}) - ${track.name?.simpleText || 'no name'}`);
       });
       
       // Find the best matching track
@@ -260,9 +285,11 @@ class YouTubeTranscriptService {
       
       if (!selectedTrack) {
         // Fall back to auto-generated or first available
-        selectedTrack = tracks.find(track => track.kind === 'asr') || // Auto-generated
+        selectedTrack = tracks.find(track => track.kind === 'asr') || // Auto-generated first
                       tracks.find(track => track.languageCode === 'en') || // English fallback
                       tracks.find(track => track.languageCode === 'he') || // Hebrew fallback
+                      tracks.find(track => track.languageCode === 'es') || // Spanish fallback
+                      tracks.find(track => !track.kind || track.kind === '') || // Manual captions
                       tracks[0]; // First available
         
         if (selectedTrack) {
@@ -275,6 +302,7 @@ class YouTubeTranscriptService {
         console.log(`📍 Transcript URL found: ${transcriptUrl.substring(0, 100)}...`);
       } else {
         console.log('❌ No transcript URL found in selected track');
+        console.log('🔍 Selected track:', selectedTrack);
       }
       
       return transcriptUrl || null;
@@ -334,16 +362,26 @@ class YouTubeTranscriptService {
           proxyUrl = proxy + encodeURIComponent(url);
         } else if (proxy.includes('codetabs.com')) {
           proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('thingproxy.freeboard.io')) {
+          proxyUrl = proxy + encodeURIComponent(url);
+        } else if (proxy.includes('crossorigin.me')) {
+          proxyUrl = proxy + encodeURIComponent(url);
         } else {
           proxyUrl = proxy + encodeURIComponent(url);
         }
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
         
         const response = await fetch(proxyUrl, {
           method: 'GET',
           headers: {
             'Accept': 'application/json, text/xml, */*',
-          }
+          },
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (response.ok) {
           const contentType = response.headers.get('content-type') || '';
@@ -351,23 +389,28 @@ class YouTubeTranscriptService {
           
           if (contentType.includes('application/json')) {
             const jsonData = await response.json();
-            data = jsonData.contents || jsonData.body || jsonData.data || jsonData;
+            data = jsonData.contents || jsonData.body || jsonData.data || jsonData.response || jsonData;
           } else {
             data = await response.text();
           }
           
-          if (typeof data === 'string' && (data.includes('<text') || data.includes('<?xml'))) {
+          if (typeof data === 'string' && (data.includes('<text') || data.includes('<?xml') || data.includes('<transcript>'))) {
             console.log(`✅ Transcript data received (${data.length} characters)`);
             return data;
           } else {
-            throw new Error('Invalid transcript format');
+            throw new Error('Invalid transcript format - no XML content found');
           }
         } else {
-          throw new Error(`HTTP ${response.status}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
       } catch (error) {
         console.warn(`❌ Proxy ${i + 1} failed for transcript:`, error.message);
         lastError = error;
+        
+        // Add small delay between proxy attempts
+        if (i < this.corsProxies.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
         continue;
       }
     }
